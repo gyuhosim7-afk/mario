@@ -278,6 +278,38 @@
         R.flash -= dt * 2.4;
       }
 
+      /* ---------- F3 그래픽 진단 패널 ---------- */
+      if (this.debug && this.renderer) {
+        const R = this.renderer, st = R.stats(), gi = R.gpuInfo();
+        const fps = st.fps || (st.ms > 0 ? Math.round(1000 / st.ms) : 0);
+        const name = gi.renderer || '(비공개)';
+        const lines = [
+          ['FPS ' + fps + '   (' + st.ms + ' ms/frame)', '#ffd54a'],
+          [(gi.software ? '⚠ 소프트웨어 렌더링 (하드웨어 가속 꺼짐)' : '✓ 하드웨어 가속') +
+            (gi.webgl2 ? ' · WebGL2' : ' · WebGL1'), gi.software ? '#ff9a8a' : '#8ef2a8'],
+          ['GPU ' + name.slice(0, 42), 'rgba(226,235,255,0.92)']
+        ];
+        if (name.length > 42) lines.push(['    ' + name.slice(42, 84), 'rgba(226,235,255,0.7)']);
+        lines.push(
+          ['품질 ' + st.quality + '/3 (' + (st.mode === 'auto' ? '자동' : '고정') + ')  해상도배율 ' + st.dpr, 'rgba(226,235,255,0.92)'],
+          ['드로우콜 ' + st.calls + '  삼각형 ' + (st.tris / 1000).toFixed(0) + 'k  파티클 ' + st.particles, 'rgba(226,235,255,0.92)']
+        );
+        ctx.save();
+        const pw = 348 * u, ph = lines.length * 16 * u + 14 * u;
+        const px = 18 * u, py = 120 * u;         // 랩 패널 아래
+        ctx.fillStyle = 'rgba(6,9,18,0.82)';
+        roundRect(ctx, px, py, pw, ph, 8 * u); ctx.fill();
+        ctx.strokeStyle = gi.software ? 'rgba(255,140,120,0.8)' : 'rgba(140,240,180,0.5)';
+        ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.font = '600 ' + (11.5 * u) + 'px ui-monospace, monospace';
+        lines.forEach((t, i) => {
+          ctx.fillStyle = t[1];
+          ctx.fillText(t[0], px + 10 * u, py + 20 * u + i * 16 * u);
+        });
+        ctx.restore();
+      }
+
       /* ---------- 토스트 / 대형 문구 ---------- */
       if (this.toastT > 0) {
         this.toastT -= dt;

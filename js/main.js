@@ -45,6 +45,7 @@
       document.getElementById('btnQuit').onclick = () => this.toLobby();
       window.addEventListener('keydown', e => {
         if (e.code === 'Escape' && this.screen === 'race') this.togglePause();
+        if (e.code === 'F3') { e.preventDefault(); this.hud.debug = !this.hud.debug; }
       });
 
       document.getElementById('btnRetry').onclick = () => { this.show('loading'); setTimeout(() => this.startRace(this.lastCfg), 60); };
@@ -157,6 +158,15 @@
           }
         });
         world.start();
+        this.renderer.setQualityMode(cfg.quality || 'auto');
+        // 하드웨어 가속이 꺼져 있으면 알려주고 즉시 품질을 낮춘다
+        const g = this.renderer.gpuInfo();
+        if (g.software) {
+          const auto = !cfg.quality || cfg.quality === 'auto';
+          if (auto) this.renderer.setQuality(0);
+          this.hud.showToast(auto ? '소프트웨어 렌더링 — 품질 최저로 전환'
+                                  : '소프트웨어 렌더링 — 하드웨어 가속을 켜세요', '#ff9a8a');
+        }
         this.renderer.particles.length = 0;
         this.renderer.camera.reset(world.player);
         this.world = world;

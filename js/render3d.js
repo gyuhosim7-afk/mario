@@ -241,8 +241,50 @@
       this._composerOn = true;
       // 적응형 품질: 프레임레이트가 낮으면 블룸/그림자/해상도를 단계적으로 낮춘다
       this.quality = 3;
+      this.qualityMode = 'auto';        // 'auto' | 0~3 고정
       this._baseDpr = Math.min(2, window.devicePixelRatio || 1);
-      this._perf = { acc: 0, frames: 0, good: 0 };
+      this._perf = { acc: 0, frames: 0, good: 0, fps: 0, ms: 0 };
+    }
+
+    /** 실제로 어떤 GPU 위에서 도는지 조회 (하드웨어 가속 확인용) */
+    gpuInfo() {
+      if (this._gpu) return this._gpu;
+      let vendor = '', renderer = '', maxTex = 0, ver = '';
+      try {
+        const gl = this.gl.getContext();
+        const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+        renderer = (dbg && gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)) || gl.getParameter(gl.RENDERER) || '';
+        vendor = (dbg && gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL)) || gl.getParameter(gl.VENDOR) || '';
+        maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE) || 0;
+        ver = gl.getParameter(gl.VERSION) || '';
+      } catch (e) { /* 컨텍스트 접근 실패 */ }
+      const software = /swiftshader|llvmpipe|software|basic render|microsoft basic|mesa offscreen/i.test(renderer + ' ' + vendor);
+      this._gpu = {
+        vendor, renderer, maxTex, ver, software,
+        webgl2: !!(this.gl.capabilities && this.gl.capabilities.isWebGL2),
+        // 이름이 가려진 경우(개인정보 보호 설정)에도 판별은 가능하도록
+        masked: !renderer || /^(webkit)?webgl/i.test(renderer)
+      };
+      return this._gpu;
+    }
+
+    /** 사용자가 그래픽 품질을 직접 고정 ('auto' 는 프레임레이트 적응) */
+    setQualityMode(mode) {
+      this.qualityMode = mode;
+      if (mode !== 'auto') this.setQuality(+mode);
+      this._perf.good = 0;
+    }
+
+    stats() {
+      const r = this.gl.info.render;
+      return {
+        fps: Math.round(this._perf.fps), ms: +this._perf.ms.toFixed(1),
+        calls: this._lastCalls || r.calls, tris: this._lastTris || r.triangles,
+        quality: this.quality, mode: this.qualityMode,
+        dpr: +this.gl.getPixelRatio().toFixed(2),
+        geo: this.gl.info.memory.geometries, tex: this.gl.info.memory.textures,
+        particles: this.particles.length
+      };
     }
 
     setQuality(q) {
@@ -270,9 +312,12 @@
     _adapt(dt) {
       const p = this._perf;
       p.acc += dt; p.frames++;
+      p.ms = p.ms * 0.9 + dt * 1000 * 0.1;
       if (p.acc < 1.4) return;
       const fps = p.frames / p.acc;
+      p.fps = fps;
       p.acc = 0; p.frames = 0;
+      if (this.qualityMode !== 'auto') return;      // 수동 고정이면 강등하지 않는다
       if (fps < 36 && this.quality > 0) { this.setQuality(this.quality - 1); p.good = 0; }
       else if (fps > 57 && this.quality < 3) { if (++p.good >= 4) { this.setQuality(this.quality + 1); p.good = 0; } }
       else p.good = 0;
@@ -740,8 +785,12 @@
       if (this.sky && me) this.sky.position.set(cam.x, 0, cam.y);
 
       // 렌더
+      this.gl.info.autoReset = false;
+      this.gl.info.reset();
       if (this.composer && this._composerOn) this.composer.render();
       else this.gl.render(this.scene, cam.cam);
+      this._lastCalls = this.gl.info.render.calls;
+      this._lastTris = this.gl.info.render.triangles;
     }
 
     /* 파티클 API (기존 코드 호환) */

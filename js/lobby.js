@@ -50,6 +50,7 @@
         btnReady: document.getElementById('btnReady'),
         btnStart: document.getElementById('btnStart'),
         cpuDiff: document.getElementById('cpuDiff'),
+        gfx: document.getElementById('gfxQuality'),
         lapCount: document.getElementById('lapCount'),
         myPing: document.getElementById('myPing')
       };
@@ -402,6 +403,7 @@
         trackId: this.sel.track,
         laps: +this.$.lapCount.value,
         skill: +this.$.cpuDiff.value,
+        quality: this.$.gfx.value === 'auto' ? 'auto' : +this.$.gfx.value,
         opponents: this.slots.slice(1).map(s => ({ name: s.name, combo: s.combo }))
       });
     }

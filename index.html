@@ -100,6 +100,16 @@
           </select>
         </label>
         <label class="cpu-diff">
+          그래픽
+          <select id="gfxQuality">
+            <option value="auto" selected>자동</option>
+            <option value="3">최고 (블룸+그림자)</option>
+            <option value="2">높음</option>
+            <option value="1">보통</option>
+            <option value="0">낮음</option>
+          </select>
+        </label>
+        <label class="cpu-diff">
           랩 수
           <select id="lapCount">
             <option value="1">1랩</option>
@@ -178,7 +188,7 @@
           <li><b>← → / A D</b> 조향</li>
           <li><b>Shift / Z</b> 드리프트 (홉 후 유지)</li>
           <li><b>Space / X</b> 아이템 사용</li>
-          <li><b>Esc</b> 일시 정지</li>
+          <li><b>Esc</b> 일시 정지 · <b>F3</b> GPU/성능 진단</li>
         </ul>
       </div>
       <div>
@@ -188,6 +198,15 @@
           <li><b>슬립스트림</b> 앞차 바로 뒤 밀집 구역에서 1.15초 주행 시 순간 가속</li>
           <li><b>로켓 스타트</b> 카운트다운 "2" 직후부터 가속 입력 유지</li>
           <li><b>부스터 발판</b> 노란 화살표 위를 통과</li>
+        </ul>
+      </div>
+      <div>
+        <h3>그래픽</h3>
+        <ul>
+          <li><b>F3</b> 를 누르면 실제 사용 중인 GPU 이름, FPS, 드로우콜이 표시됩니다</li>
+          <li>하드웨어 가속이 꺼져 있으면(SwiftShader 등) 경고가 뜨고 품질이 최저로 내려갑니다</li>
+          <li>품질 <b>자동</b>은 프레임레이트를 재서 블룸 → 그림자 → 해상도 순으로 낮춥니다</li>
+          <li>브라우저에서 하드웨어 가속이 꺼져 있다면 설정에서 켜세요</li>
         </ul>
       </div>
       <div>
