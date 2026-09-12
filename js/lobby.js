@@ -17,7 +17,7 @@
   };
 
   const Lobby = {
-    sel: { char: 'mario', frame: 'standard', wheel: 'std', glider: 'super', track: 'circuit' },
+    sel: { char: 'koko', frame: 'standard', wheel: 'std', glider: 'super', track: 'circuit' },
     tab: 'character',
     combo: null,
     prevStats: null,

@@ -27,61 +27,64 @@
    *    heavy  : 최고속 / 무게 특화, 가속 / 핸들링 낮음
    * --------------------------------------------------------- */
   const CHARACTERS = [
+    /* ---- 경량급 ---- */
     {
-      id: 'toad', name: '키노피오', cls: 'light', clsName: '경량급',
+      id: 'bbiyak', name: '삐약', cls: 'light', clsName: '경량급',
       stats: { speed: 2.0, accel: 5.0, weight: 1.5, handling: 4.75, offroad: 4.0 },
-      colors: { skin: '#f7e3c8', cap: '#f4f4f4', spot: '#e8404a', vest: '#2f6fd0', trim: '#f5c542', accent: '#e8404a' },
+      colors: { body: '#f7d94a', accent: '#ffa726', trim: '#f26d3d', belly: '#fff3c4', detail: '#f2892e', eye: '#2a1d10' },
       desc: '경량 가속형. 피격 회복과 초반 가속이 가장 빠르다.',
-      flavor: '붉은 점무늬 양송이 캡은 젤리 같은 광택을 띤다. 작은 스티어링 휠을 두 손으로 바쁘게 움직이며, 가속할 때 몸을 앞으로 바짝 밀착시킨다.'
+      flavor: '고글을 이마에 걸친 노란 병아리 파일럿. 목에 두른 주황 스카프가 주행풍에 길게 날리고, 꽁지깃이 가속할 때마다 파르르 떨린다. 스타트 라인에서 가장 먼저 튀어나가는 쪽.'
     },
     {
-      id: 'babymario', name: '베이비 마리오', cls: 'light', clsName: '경량급',
+      id: 'momo', name: '모모', cls: 'light', clsName: '경량급',
       stats: { speed: 1.75, accel: 5.25, weight: 1.25, handling: 5.0, offroad: 4.25 },
-      colors: { skin: '#f7d0a8', cap: '#e5322f', spot: '#ffffff', vest: '#e5322f', trim: '#3b6fd0', accent: '#e5322f' },
+      colors: { body: '#f7ecf1', accent: '#f48fb1', trim: '#7ec8e3', belly: '#ffffff', detail: '#f4a8c0', eye: '#5a3550' },
       desc: '최경량. 코너 탈출 속도와 오프로드 복귀력이 뛰어나다.',
-      flavor: '작은 몸집이 시트에 파묻히지만 커브에서는 누구보다 날카롭게 파고든다.'
+      flavor: '길게 늘어진 두 귀를 뒤로 눕히고 달리는 흰 토끼. 코너에서 귀가 원심력으로 바깥쪽으로 휘고, 둥근 꼬리가 시트 뒤로 삐져나와 있다.'
     },
     {
-      id: 'peach', name: '피치', cls: 'light', clsName: '경량급',
+      id: 'volt', name: '볼트', cls: 'light', clsName: '경량급',
       stats: { speed: 2.75, accel: 4.5, weight: 2.5, handling: 4.25, offroad: 3.5 },
-      colors: { skin: '#f9dcc0', cap: '#f4d03f', spot: '#ffffff', vest: '#ef8fc4', trim: '#f4d03f', accent: '#ef8fc4' },
+      colors: { body: '#c6d2e0', accent: '#35c8f0', trim: '#22364f', belly: '#8fa3ba', detail: '#7ef9ff', eye: '#7ef9ff' },
       desc: '경량급 중 최고속 지향. 안정적인 라인 유지가 강점.',
-      flavor: '드레스 자락이 주행풍에 나부끼며, 왕관의 보석이 조명을 반사한다.'
+      flavor: '각진 금속 헤드에 가로로 긴 시안색 바이저를 단 소형 로봇. 머리 위 안테나 끝의 구슬이 속도에 비례해 밝게 점멸하고, 가슴 패널의 LED 게이지가 차오른다.'
     },
+    /* ---- 중형급 ---- */
     {
-      id: 'mario', name: '마리오', cls: 'medium', clsName: '중형급',
+      id: 'koko', name: '코코', cls: 'medium', clsName: '중형급',
       stats: { speed: 3.5, accel: 3.5, weight: 3.5, handling: 3.5, offroad: 3.0 },
-      colors: { skin: '#f7d0a8', cap: '#e5322f', spot: '#ffffff', vest: '#e5322f', trim: '#2f5fbf', accent: '#e5322f' },
+      colors: { body: '#5fc46a', accent: '#3fa14a', trim: '#e8a13c', belly: '#f2e6b8', detail: '#e8a13c', eye: '#20341f' },
       desc: '올라운더 중형급. 속도·가속·핸들링·무게가 모두 균형.',
-      flavor: '붉은 멜빵 상의와 데님 오버롤. 장갑의 흰 가죽에 손가락 마디 주름이 잡히고, 콧수염이 바람에 흔들린다. 점프 시 오른손을 들어 올리는 시그니처 포즈.'
+      flavor: '둥근 주둥이와 커다란 눈을 가진 초록 아기 공룡. 등줄기를 따라 주황색 등지느러미가 세 갈래로 솟아 있고, 크림색 배가 시트 위로 볼록하다.'
     },
     {
-      id: 'luigi', name: '루이지', cls: 'medium', clsName: '중형급',
+      id: 'tango', name: '탱고', cls: 'medium', clsName: '중형급',
       stats: { speed: 3.75, accel: 3.25, weight: 3.5, handling: 3.25, offroad: 3.25 },
-      colors: { skin: '#f7d0a8', cap: '#37a34a', spot: '#ffffff', vest: '#37a34a', trim: '#2f5fbf', accent: '#37a34a' },
-      desc: '중형급 속도형. 직선 구간에서 마리오보다 조금 더 뻗는다.',
-      flavor: '길쭉한 실루엣이 시트 위로 솟아 있고, 코너에서는 상체를 크게 기울인다.'
+      colors: { body: '#f08a3c', accent: '#d9662a', trim: '#3c4a66', belly: '#f8ead6', detail: '#ffffff', eye: '#3a2210' },
+      desc: '중형급 속도형. 직선 구간에서 조금 더 뻗는다.',
+      flavor: '가죽 파일럿 헬멧을 눌러쓴 주황 여우. 끝이 하얀 커다란 꼬리가 시트 뒤에서 균형추처럼 흔들리고, 귀 끝의 검은 털이 헬멧 밖으로 삐죽 나와 있다.'
     },
     {
-      id: 'yoshi', name: '요시', cls: 'medium', clsName: '중형급',
+      id: 'luna', name: '루나', cls: 'medium', clsName: '중형급',
       stats: { speed: 3.25, accel: 3.75, weight: 3.25, handling: 3.75, offroad: 3.25 },
-      colors: { skin: '#4fbf4f', cap: '#4fbf4f', spot: '#ffffff', vest: '#e56f2f', trim: '#ffffff', accent: '#4fbf4f' },
+      colors: { body: '#8b6fd6', accent: '#6b4fc4', trim: '#ffd54a', belly: '#efe6ff', detail: '#f4a8c0', eye: '#ffd54a' },
       desc: '중형급 핸들링형. 연속 코너 구간에서 라인이 깔끔하다.',
-      flavor: '넓적한 주둥이를 앞으로 내밀고 달리며, 안장 같은 붉은 등딱지가 흔들린다.'
+      flavor: '뾰족한 귀와 금빛 눈을 가진 보라 고양이. 목에 감은 노란 스카프가 나부끼고, 긴 꼬리가 코너 방향으로 먼저 기울며 무게 중심을 잡는다.'
     },
+    /* ---- 중량급 ---- */
     {
-      id: 'dk', name: '동키콩', cls: 'heavy', clsName: '중량급',
+      id: 'bumper', name: '범퍼', cls: 'heavy', clsName: '중량급',
       stats: { speed: 4.5, accel: 2.5, weight: 4.75, handling: 2.5, offroad: 2.75 },
-      colors: { skin: '#8a5a2b', cap: '#5a3a1b', spot: '#d9b48a', vest: '#c0392b', trim: '#f4d03f', accent: '#c0392b' },
+      colors: { body: '#7d8ea3', accent: '#48607d', trim: '#e8e2d0', belly: '#9fb0c4', detail: '#e8e2d0', eye: '#20262e' },
       desc: '중량급. 충돌 시 밀어내는 힘이 강하고 최고속이 높다.',
-      flavor: '두툼한 팔뚝이 핸들을 감싸고, 붉은 넥타이가 등 뒤로 펄럭인다.'
+      flavor: '콧등에 굵은 상아빛 뿔이 솟은 청회색 코뿔소. 어깨에 덧댄 철판 장갑이 충돌 자국으로 우그러져 있고, 핸들을 쥔 손이 그립을 삼킬 만큼 크다.'
     },
     {
-      id: 'bowser', name: '쿠파', cls: 'heavy', clsName: '중량급',
+      id: 'magma', name: '마그마', cls: 'heavy', clsName: '중량급',
       stats: { speed: 5.0, accel: 2.0, weight: 5.0, handling: 2.0, offroad: 2.5 },
-      colors: { skin: '#e6b23c', cap: '#3f8f3f', spot: '#f2e2c0', vest: '#3f8f3f', trim: '#e05a1e', accent: '#e05a1e' },
+      colors: { body: '#4a2f28', accent: '#ff5a1e', trim: '#2a1a16', belly: '#6b4438', detail: '#ff7a10', eye: '#ffca4a' },
       desc: '파워형 중량급. 최고 속도와 무게 최상, 가속·핸들링 최하.',
-      flavor: '운전석을 가득 채우는 거구. 황갈색 파충류 가죽의 거친 요철, 그을린 흰 뿔, 징 박힌 가죽 팔찌가 엔진 진동에 맞춰 울린다. 관상아 사이로 화염 입자가 피어오르고, 코너에서는 육중한 몸을 안쪽으로 기울여 타이어를 지면에 눌러 붙인다.'
+      flavor: '운전석을 가득 채우는 암석 골렘. 각진 현무암 표면의 갈라진 틈으로 용암이 흐르며 붉게 맥동하고, 정수리의 두 뿔은 열기에 그을려 끝이 검다. 브레이크를 밟을 때마다 관절 틈에서 불티가 새어 나온다.'
     }
   ];
 
@@ -122,10 +125,10 @@
     coin:      { id: 'coin',      name: '동전',        icon: '🪙', color: '#f4c542', kind: 'buff',   desc: '동전 2개 획득 + 순간 가속' },
     mushroom:  { id: 'mushroom',  name: '버섯',        icon: '🍄', color: '#e5484d', kind: 'boost',  desc: '단발 대시 부스터' },
     triplemush:{ id: 'triplemush',name: '트리플 버섯', icon: '🍄', color: '#e5484d', kind: 'boost',  count: 3, desc: '부스터 3회분' },
-    bobomb:    { id: 'bobomb',    name: '폭탄병',      icon: '💣', color: '#3a3a48', kind: 'shot',   desc: '착탄 시 광역 폭발 넉백' },
-    bulletbill:{ id: 'bulletbill',name: '킬러',        icon: '🚀', color: '#2f2f38', kind: 'special',desc: '자동 주행 무적 돌진' },
+    bobomb:    { id: 'bobomb',    name: '폭탄',      icon: '💣', color: '#3a3a48', kind: 'shot',   desc: '착탄 시 광역 폭발 넉백' },
+    bulletbill:{ id: 'bulletbill',name: '로켓',        icon: '🚀', color: '#2f2f38', kind: 'special',desc: '자동 주행 무적 돌진' },
     star:      { id: 'star',      name: '스타',        icon: '⭐', color: '#f7d13c', kind: 'special',desc: '7초간 무적 + 속도 상승' },
-    spiny:     { id: 'spiny',     name: '가시 껍질',   icon: '🌀', color: '#3f6fd0', kind: 'special',desc: '1위를 직격하는 유도 폭발' },
+    spiny:     { id: 'spiny',     name: '스파이크 셸',   icon: '🌀', color: '#3f6fd0', kind: 'special',desc: '1위를 직격하는 유도 폭발' },
     lightning: { id: 'lightning', name: '번개',        icon: '⚡', color: '#f2e14c', kind: 'special',desc: '자신 외 전원 축소 + 아이템 파괴' }
   };
 
@@ -162,8 +165,8 @@
   const TRACKS = [
     {
       id: 'circuit',
-      name: '마리오 서킷',
-      subtitle: 'Mario Circuit',
+      name: '에메랄드 서킷',
+      subtitle: 'Emerald Circuit',
       difficulty: 1,
       laps: 3,
       width: 168,
@@ -194,8 +197,8 @@
     },
     {
       id: 'rainbow',
-      name: '무지개 로드',
-      subtitle: 'Rainbow Road',
+      name: '프리즘 로드',
+      subtitle: 'Prism Road',
       difficulty: 3,
       laps: 3,
       width: 150,
@@ -223,14 +226,14 @@
     },
     {
       id: 'bowser',
-      name: '쿠파 성',
-      subtitle: "Bowser's Castle",
+      name: '마그마 성채',
+      subtitle: 'Magma Keep',
       difficulty: 3,
       laps: 3,
       width: 150,
       theme: 'bowser',
       heading: 0,
-      desc: '직각 코너와 두 번의 스위치백이 이어지는 테크니컬 코스. 성문을 관통하는 긴 직선 구간에는 쿵쿵이가 내려찍는다.',
+      desc: '직각 코너와 두 번의 스위치백이 이어지는 테크니컬 코스. 성문을 관통하는 긴 직선 구간에는 스톰퍼가 내려찍는다.',
       sky: ['#1a0a08', '#5a1e10'],
       fog: '#3a120c',
       offroadName: '용암',

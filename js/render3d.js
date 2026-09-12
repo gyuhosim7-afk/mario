@@ -487,7 +487,7 @@
       road.receiveShadow = true;
       g.add(road);
 
-      /* --- 무지개 로드 네온 레일 --- */
+      /* --- 프리즘 로드 네온 레일 --- */
       if (theme === 'rainbow') {
         const railMat = new T.MeshBasicMaterial({ color: new T.Color('#5fd0ff'), fog: false });
         [-1, 1].forEach(s => {
@@ -568,7 +568,7 @@
       boxTpl.updateMatrixWorld(true);
       boxTpl.traverse(o => { if (o.isMesh) this._boxLeaves.push(o.matrixWorld.clone()); });
 
-      /* --- 쿵쿵이 --- */
+      /* --- 스톰퍼 --- */
       this.thwompNodes = track.thwomps.map(t => {
         const n = global.Models.buildProp('thwomp');
         n.position.set(t.x, t.h + 40, t.y);
@@ -741,7 +741,7 @@
         this.boxMeshes.forEach(im => { im.instanceMatrix.needsUpdate = true; });
       }
 
-      // 쿵쿵이
+      // 스톰퍼
       if (this.thwompNodes) {
         this.track.thwomps.forEach((t, i) => {
           const n = this.thwompNodes[i];

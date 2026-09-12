@@ -131,7 +131,7 @@
       return true;
     }
 
-    /** 폭탄병 / 가시 껍질 : 임펄스 넉백 + 아이템/동전 드롭 */
+    /** 폭탄 / 스파이크 셸 : 임펄스 넉백 + 아이템/동전 드롭 */
     knockback(dirX, dirY, power) {
       if (this.invincible || this.finished) return false;
       const p = power || 1;
@@ -170,7 +170,7 @@
       return true;
     }
 
-    /** 코스 이탈 - 키노피오(라키투) 복귀 */
+    /** 코스 이탈 - 레스큐 드론 복귀 */
     respawn() {
       if (this.state === STATE.RESPAWN) return;
       this.state = STATE.RESPAWN;
@@ -298,14 +298,14 @@
         this._onBoostPad = true;
       } else if (this.surface !== S.BOOST) this._onBoostPad = false;
 
-      // 용암: 잠깐 버티다 라키투가 건져 올린다 (넉백 무한 루프 방지)
+      // 용암: 잠깐 버티다 레스큐 드론이 건져 올린다 (넉백 무한 루프 방지)
       if (this.surface === S.LAVA) {
         this._lavaT = (this._lavaT || 0) + dt;
         this.speed *= (1 - dt * 1.4);
         if (this._lavaT > 0.45) { this._lavaT = 0; this.lavaBurn = true; this.respawn(); return; }
       } else this._lavaT = 0;
 
-      // 코스에서 너무 멀리 이탈하면 라키투가 복귀시킨다
+      // 코스에서 너무 멀리 이탈하면 레스큐 드론이 복귀시킨다
       if (this.offTrackDist > this.track.width * 0.5 + 185) { this.respawn(); return; }
 
       // 허공 낙하
@@ -413,7 +413,7 @@
       this.offTrackDist = p.dist;
     }
 
-    /** 킬러 / AI 자동 주행 */
+    /** 로켓 / AI 자동 주행 */
     _autoDrive(dt, speedMul) {
       const tr = this.track;
       const look = tr.nodeAt(this.node + 16);

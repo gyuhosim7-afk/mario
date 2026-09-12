@@ -211,10 +211,10 @@
           const nx = dx / d, ny = dy / d;
           const overlap = minD - d;
 
-          // 스타 / 킬러 : 접촉한 상대를 날려버린다
+          // 스타 / 로켓 : 접촉한 상대를 날려버린다
           const aStar = a.starTimer > 0, bStar = b.starTimer > 0;
           const aBull = a.state === 'BULLET', bBull = b.state === 'BULLET';
-          // 스타는 날려버리고, 킬러는 밀어내며 스핀아웃시킨다
+          // 스타는 날려버리고, 로켓는 밀어내며 스핀아웃시킨다
           if ((aStar || aBull) && !(bStar || bBull)) { this.hitKart(b, aStar ? 'knock' : 'spin', nx, ny, 0.85, a); continue; }
           if ((bStar || bBull) && !(aStar || aBull)) { this.hitKart(a, bStar ? 'knock' : 'spin', -nx, -ny, 0.85, b); continue; }
 
@@ -372,7 +372,7 @@
         case 'bulletbill':
           k.startBullet();
           global.SFX.sfx('boost');
-          notify('킬러 발동!', '#ffd54a', 'bulletbill');
+          notify('로켓 발동!', '#ffd54a', 'bulletbill');
           break;
         case 'star':
           k.starTimer = 7;

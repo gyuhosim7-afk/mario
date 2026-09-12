@@ -320,7 +320,7 @@
           0.7 + rnd() * 0.8, 150 + rnd() * 260, 40 + rnd() * 200);
       }
 
-      // 쿠파 성 쿵쿵이: 직선 구간 위주로
+      // 마그마 성채 스톰퍼: 직선 구간 위주로
       this.thwomps = [];
       if (this.def.hazard === 'thwomp') {
         const spots = [];
