@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>SUPER KART GRAND PRIX</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><text y='52' font-size='52'>🏎️</text></svg>">
+</head>
+<body>
+
+<!-- ================= 로비 / 대시보드 ================= -->
+<section id="lobby" class="screen active">
+  <header class="topbar">
+    <div class="logo">
+      <span class="logo-mark">🏁</span>
+      <div>
+        <h1>SUPER KART <em>GRAND PRIX</em></h1>
+        <p>카트 커스텀 · 아이템 확률 · 3트랙 그랑프리</p>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <div class="ping-chip"><span class="dot good"></span> PING <b id="myPing">24</b>ms</div>
+      <button id="btnHelp" class="ghost-btn">조작법</button>
+    </div>
+  </header>
+
+  <div class="lobby-grid">
+
+    <!-- ---------- 파츠 커스텀 ---------- -->
+    <div class="panel parts-panel">
+      <div class="panel-head">
+        <h2>파츠 커스텀</h2>
+        <span class="hint">파츠를 바꾸면 스탯이 실시간으로 재계산됩니다</span>
+      </div>
+      <div class="tabs" id="partTabs">
+        <button class="tab active" data-tab="character">캐릭터</button>
+        <button class="tab" data-tab="frame">프레임</button>
+        <button class="tab" data-tab="wheel">바퀴</button>
+        <button class="tab" data-tab="glider">글라이더</button>
+      </div>
+      <div class="part-grid" id="partGrid"></div>
+      <div class="part-desc" id="partDesc"></div>
+    </div>
+
+    <!-- ---------- 프리뷰 + 스탯 ---------- -->
+    <div class="panel preview-panel">
+      <div class="panel-head"><h2>3D 프리뷰</h2><span class="hint" id="comboName">—</span></div>
+      <div class="preview-stage">
+        <canvas id="previewCanvas" width="520" height="300"></canvas>
+        <div class="preview-badges">
+          <span class="badge" id="classBadge">중형급</span>
+          <span class="badge alt" id="totalBadge">TOTAL 0.0</span>
+        </div>
+        <button class="ghost-btn spin-btn" id="btnSpin">↻ 회전</button>
+      </div>
+      <div class="stats" id="statBars"></div>
+      <div class="flavor" id="charFlavor"></div>
+    </div>
+
+    <!-- ---------- 아이템 룰렛 시뮬레이터 ---------- -->
+    <div class="panel roulette-panel">
+      <div class="panel-head">
+        <h2>아이템 룰렛 시뮬레이터</h2>
+        <span class="hint">순위별 드롭 가중치 테스트</span>
+      </div>
+      <div class="rank-row">
+        <label>현재 순위</label>
+        <input type="range" id="rankSlider" min="1" max="8" value="5">
+        <span class="rank-val" id="rankVal">5위</span>
+      </div>
+      <div class="roulette-stage">
+        <div class="roulette-slot" id="rouletteSlot">?</div>
+        <button class="primary-btn small" id="btnRoll">룰렛 돌리기</button>
+      </div>
+      <div class="prob-list" id="probList"></div>
+      <div class="roll-log" id="rollLog"></div>
+    </div>
+
+    <!-- ---------- 트랙 선택 ---------- -->
+    <div class="panel track-panel">
+      <div class="panel-head"><h2>트랙 선택</h2><span class="hint">투표 카드</span></div>
+      <div class="track-cards" id="trackCards"></div>
+    </div>
+
+    <!-- ---------- 대기실 ---------- -->
+    <div class="panel room-panel">
+      <div class="panel-head">
+        <h2>파티 룸</h2>
+        <span class="hint" id="roomStatus">대기 중…</span>
+      </div>
+      <div class="slots" id="playerSlots"></div>
+      <div class="room-foot">
+        <label class="cpu-diff">
+          CPU 난이도
+          <select id="cpuDiff">
+            <option value="0.45">易 - 초보</option>
+            <option value="0.68" selected>中 - 보통</option>
+            <option value="0.9">難 - 전문가</option>
+          </select>
+        </label>
+        <label class="cpu-diff">
+          랩 수
+          <select id="lapCount">
+            <option value="1">1랩</option>
+            <option value="3" selected>3랩</option>
+            <option value="5">5랩</option>
+          </select>
+        </label>
+        <button class="primary-btn" id="btnReady">READY</button>
+        <button class="primary-btn go" id="btnStart" disabled>GAME START</button>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ================= 로딩 ================= -->
+<section id="loading" class="screen overlay-screen">
+  <div class="loader">
+    <div class="loader-kart">🏎️</div>
+    <h2 id="loadTitle">트랙 생성 중…</h2>
+    <div class="bar"><i id="loadBar"></i></div>
+    <p id="loadTip"></p>
+  </div>
+</section>
+
+<!-- ================= 레이스 ================= -->
+<section id="race" class="screen">
+  <canvas id="gameCanvas"></canvas>
+  <canvas id="hudCanvas"></canvas>
+  <div id="touchControls" class="touch">
+    <div class="pad left">
+      <button class="tbtn" data-act="left">◀</button>
+      <button class="tbtn" data-act="right">▶</button>
+    </div>
+    <div class="pad right">
+      <button class="tbtn wide" data-act="item">아이템</button>
+      <button class="tbtn" data-act="drift">드리프트</button>
+      <button class="tbtn accel" data-act="accel">가속</button>
+    </div>
+  </div>
+  <button id="btnPause" class="pause-btn">II</button>
+  <div id="rotateHint" class="rotate-hint hidden">📱 가로 모드를 권장합니다</div>
+  <div id="pauseOverlay" class="modal hidden">
+    <div class="modal-box">
+      <h2>일시 정지</h2>
+      <div class="keymap"></div>
+      <div class="modal-actions">
+        <button class="primary-btn" id="btnResume">계속하기</button>
+        <button class="ghost-btn" id="btnQuit">로비로</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 결과 ================= -->
+<section id="results" class="screen">
+  <div class="result-box">
+    <h2 id="resultTitle">RESULT</h2>
+    <table class="result-table"><tbody id="resultBody"></tbody></table>
+    <div class="modal-actions">
+      <button class="primary-btn" id="btnRetry">다시 하기</button>
+      <button class="ghost-btn" id="btnLobby">로비로</button>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 도움말 ================= -->
+<div id="helpModal" class="modal hidden">
+  <div class="modal-box wide">
+    <h2>조작법 &amp; 시스템</h2>
+    <div class="help-grid">
+      <div>
+        <h3>조작</h3>
+        <ul>
+          <li><b>↑ / W</b> 가속 · <b>↓ / S</b> 브레이크·후진</li>
+          <li><b>← → / A D</b> 조향</li>
+          <li><b>Shift / Z</b> 드리프트 (홉 후 유지)</li>
+          <li><b>Space / X</b> 아이템 사용</li>
+          <li><b>Esc</b> 일시 정지</li>
+        </ul>
+      </div>
+      <div>
+        <h3>주행 테크닉</h3>
+        <ul>
+          <li><b>미니 터보</b> 드리프트 유지 → 파랑▸주황▸보라 스파크, 해제 시 단계 비례 부스터</li>
+          <li><b>슬립스트림</b> 앞차 바로 뒤 밀집 구역에서 1.15초 주행 시 순간 가속</li>
+          <li><b>로켓 스타트</b> 카운트다운 "2" 직후부터 가속 입력 유지</li>
+          <li><b>부스터 발판</b> 노란 화살표 위를 통과</li>
+        </ul>
+      </div>
+      <div>
+        <h3>피격 상태(FSM)</h3>
+        <ul>
+          <li><b>Spin-out</b> 바나나·초록 껍질 → 추진력 0, 720° 회전 1.5초</li>
+          <li><b>Knockback</b> 폭탄·가시 껍질 → 공중 임펄스 + 아이템/동전 드롭</li>
+          <li><b>Shrink</b> 번개 → 0.5배 축소, 5초간 40% 감쇄, 아이템 파괴</li>
+        </ul>
+      </div>
+    </div>
+    <div class="modal-actions"><button class="primary-btn" id="btnHelpClose">닫기</button></div>
+  </div>
+</div>
+
+<script src="js/data.js"></script>
+<script src="js/stats.js"></script>
+<script src="js/items.js"></script>
+<script src="js/sprites.js"></script>
+<script src="js/track.js"></script>
+<script src="js/kart.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/render.js"></script>
+<script src="js/hud.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/game.js"></script>
+<script src="js/lobby.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
