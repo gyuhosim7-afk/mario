@@ -94,20 +94,36 @@
   }
 
   /* =============================================================
-   * 캐릭터 — 오리지널 캐스트 8종
-   *   리그: 골반(y=0) → 몸통 → 어깨 → 목 → 머리 순으로 쌓아 올린다.
-   *   목을 따로 두어 머리가 몸통에 파묻히지 않게 한다. 정면은 +X.
+   * 캐릭터 — 오리지널 캐스트 8종 (착좌 관절 리그)
+   *
+   *   pelvis ─┬─ torso ─┬─ head
+   *           │         ├─ armL(upper → fore → hand)
+   *           │         └─ armR
+   *           ├─ legL(thigh → shin → foot)
+   *           └─ legR
+   *
+   *   각 관절은 userData.joint = true 로 표시되어 지오메트리 병합 시
+   *   관절 단위로만 합쳐진다(관절끼리는 합치지 않음 -> 런타임 포즈 가능).
+   *   정면은 +X, 원점은 좌석 바닥.
    * ============================================================= */
 
-  /** 두 점을 잇는 캡슐 (팔/다리/꼬리) */
-  function limb(ax, ay, az, bx, by, bz, r, m) {
-    const a = new T.Vector3(ax, ay, az), b = new T.Vector3(bx, by, bz);
-    const dir = new T.Vector3().subVectors(b, a);
-    const len = dir.length();
-    const mm = mesh(new T.CapsuleGeometry(r, Math.max(0.2, len - r * 2), 5, 12), m);
-    mm.position.copy(a).addScaledVector(dir, 0.5);
-    mm.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), dir.clone().normalize());
-    return mm;
+  /** 관절 피벗: +Y 방향으로 길이 len 만큼 뻗는 캡슐을 자식으로 갖는다 */
+  function bone(len, r, m, name) {
+    const j = new T.Object3D();
+    j.userData.joint = true;
+    j.name = name || '';
+    const c = mesh(new T.CapsuleGeometry(r, Math.max(0.2, len - r * 2), 5, 12), m);
+    c.position.y = len / 2;
+    j.add(c);
+    j.userData.len = len;
+    return j;
+  }
+  function joint(x, y, z, name) {
+    const j = new T.Object3D();
+    j.position.set(x || 0, y || 0, z || 0);
+    j.userData.joint = true;
+    j.name = name || '';
+    return j;
   }
   function emissiveMat(color, glow, intensity) {
     const m = mat(color, { emissive: glow, emissiveIntensity: intensity || 2, rough: 0.5 });
@@ -120,7 +136,6 @@
     const ext = global.Assets && global.Assets.character(ch.id);
     if (ext) { ext.userData.external = true; return ext; }
 
-    const g = new T.Group();
     const c = ch.colors;
     const heavy = ch.cls === 'heavy', light = ch.cls === 'light';
     const S = heavy ? 1.18 : (light ? 0.88 : 1.0);
@@ -132,309 +147,313 @@
     const detail = mat(c.detail, { rough: 0.6 });
     const white = mat('#f8f8fb', { rough: 0.45 });
     const dark = mat('#1c1c24', { rough: 0.5 });
+    const shoeMat = mat(c.trim, { rough: 0.7 });
 
-    /* ---- 치수 (medium 기준, S 배율) ---- */
-    const torsoR = 4.3 * S, torsoLen = 7.0 * S;
-    const torsoY = 7.4 * S;
-    const shoY = 12.6 * S, shZ = 4.4 * S;
-    const neckY = 15.6 * S;
+    /* ---- 치수 ---- */
+    const torsoR = 4.3 * S, torsoLen = 6.6 * S;
+    const pelvisY = 0;                       // 좌석 바닥
+    const torsoPivot = 2.6 * S;              // 골반 위 척추 시작점
+    const chestY = 5.2 * S;                  // torso 로컬 기준 가슴 중심
+    const shoY = 9.4 * S, shZ = 4.4 * S;     // torso 로컬 어깨
+    const neckY = 12.4 * S;
     const headR = (heavy ? 6.2 : 5.6) * S;
-    const headY = neckY + 5.6 * S + headR * 0.45;
+    const headLocalY = 5.4 * S + headR * 0.45;   // 목 위 머리 중심
     const front = headR * 0.95;
+    const upperLen = 6.1 * S, foreLen = 5.7 * S;
+    const thighLen = 7.6 * S, shinLen = 7.0 * S;
 
-    /* ---- 몸통 ---- */
-    const torso = capsule(torsoR, torsoLen, body, 0, torsoY, 0);
-    torso.scale.set(1.0, 1, 0.88);
-    g.add(torso);
-    // 배/가슴판
-    const chest = sphere(torsoR * 0.86, belly, torsoR * 0.52, torsoY - 0.6 * S, 0, 14);
-    chest.scale.set(0.7, 1.15, 0.92);
-    g.add(chest);
-    // 어깨
-    [-1, 1].forEach(sd => g.add(sphere(2.9 * S, body, 0.4 * S, shoY, sd * shZ, 12)));
-    // 목
-    g.add(cyl(1.75 * S, 2.0 * S, 3.2 * S, body, 0, neckY, 0, 10));
+    const root = new T.Group();
 
-    /* ---- 머리 ---- */
-    let head;
-    if (ch.id === 'volt') {
-      head = rounded(8.2 * S, 8.0 * S, 8.0 * S, 1.6 * S, mat(c.body, { rough: 0.35, metal: 0.75 }));
-      head.position.set(0, headY, 0);
-      head.rotation.x = Math.PI / 2;
-      g.add(head);
-    } else if (ch.id === 'magma') {
-      head = mesh(new T.IcosahedronGeometry(headR * 1.05, 0), mat(c.body, { rough: 0.95, flat: true }));
-      head.position.set(0, headY, 0);
-      head.rotation.set(0.3, 0.6, 0.1);
-      g.add(head);
-    } else {
-      head = sphere(headR, body, 0, headY, 0, 18);
-      head.scale.set(1, 1.02, 0.97);
-      g.add(head);
-    }
+    /* ---------- 골반 ---------- */
+    const pelvis = joint(0, pelvisY, 0, 'pelvis');
+    pelvis.userData.joint = false;   // 정적 -> 카트 본체와 함께 병합
+    root.add(pelvis);
+    const hips = capsule(torsoR * 0.92, 2.2 * S, body, 0, 1.6 * S, 0);
+    hips.scale.set(1, 1, 1.05);
+    pelvis.add(hips);
 
-    /* ---- 팔 ---- (핸들 그립 위치는 체급과 무관하게 고정) */
-    const handX = 13.0, handY = 9.4, handZ = 3.6;
+    /* ---------- 다리 (착좌: 허벅지 앞으로, 정강이 아래로, 발은 페달) ---------- */
+    const legs = [];
     [-1, 1].forEach(sd => {
-      g.add(limb(0.5 * S, shoY - 0.4 * S, sd * shZ, handX - 1.2, handY, sd * handZ, 1.65 * S, body));
-      const glove = sphere(2.2 * S, ch.id === 'volt' ? mat(c.trim, { metal: 0.6, rough: 0.4 }) : white,
-        handX, handY, sd * handZ, 12);
-      g.add(glove);
+      const hip = joint(0.6 * S, 1.4 * S, sd * 3.3 * S, 'hip');
+      pelvis.add(hip);
+      const thigh = bone(thighLen, 2.3 * S, body, 'thigh');
+      thigh.rotation.z = -Math.PI / 2 + 0.18;      // 앞으로 거의 수평
+      thigh.rotation.x = sd * -0.10;
+      hip.add(thigh);
+
+      const knee = joint(0, thighLen, 0, 'knee');
+      thigh.add(knee);
+      const shin = bone(shinLen, 1.9 * S, body, 'shin');
+      shin.rotation.z = -1.15;                     // 무릎에서 아래로 꺾임
+      knee.add(shin);
+
+      const ankle = joint(0, shinLen, 0, 'ankle');
+      shin.add(ankle);
+      const foot = rounded(5.2 * S, 2.4 * S, 3.0 * S, 0.9 * S, shoeMat);
+      foot.rotation.x = Math.PI / 2;
+      foot.rotation.z = 1.35;
+      foot.position.set(1.3 * S, 0.4 * S, 0);
+      ankle.add(foot);
+      [hip, thigh, knee, shin, ankle].forEach(n => { n.userData.joint = false; });
+      legs.push({ hip, thigh, knee, shin, ankle });
     });
 
-    /* ---- 눈 (바이저형 제외) ---- */
+    /* ---------- 몸통 ---------- */
+    const torso = joint(0, torsoPivot, 0, 'torso');
+    pelvis.add(torso);
+    const chest = capsule(torsoR, torsoLen, body, 0, chestY - 0.4 * S, 0);
+    chest.scale.set(1.0, 1, 0.88);
+    torso.add(chest);
+    const bellyM = sphere(torsoR * 0.84, belly, torsoR * 0.5, chestY - 1.0 * S, 0, 14);
+    bellyM.scale.set(0.7, 1.15, 0.92);
+    torso.add(bellyM);
+    [-1, 1].forEach(sd => torso.add(sphere(2.9 * S, body, 0.4 * S, shoY, sd * shZ, 12)));
+    torso.add(cyl(1.75 * S, 2.0 * S, 3.0 * S, body, 0, neckY, 0, 10));
+
+    /* ---------- 머리 ---------- */
+    const headJ = joint(0, neckY + 1.2 * S, 0, 'head');
+    torso.add(headJ);
+    const hY = headLocalY - (neckY + 1.2 * S) + neckY * 0;   // headJ 로컬에서의 머리 중심
+    const hc = 4.4 * S;                                       // 머리 중심 오프셋
+    if (ch.id === 'volt') {
+      const hd = rounded(8.2 * S, 8.0 * S, 8.0 * S, 1.6 * S, mat(c.body, { rough: 0.35, metal: 0.75 }));
+      hd.position.y = hc; hd.rotation.x = Math.PI / 2;
+      headJ.add(hd);
+    } else if (ch.id === 'magma') {
+      const hd = mesh(new T.IcosahedronGeometry(headR * 1.05, 0), mat(c.body, { rough: 0.95, flat: true }));
+      hd.position.y = hc; hd.rotation.set(0.3, 0.6, 0.1);
+      headJ.add(hd);
+    } else {
+      const hd = sphere(headR, body, 0, hc, 0, 18);
+      hd.scale.set(1, 1.02, 0.97);
+      headJ.add(hd);
+    }
+
+    /* ---------- 팔 (IK 로 핸들을 잡는다) ---------- */
+    const arms = [];
+    [-1, 1].forEach(sd => {
+      const shoulder = joint(0.5 * S, shoY - 0.3 * S, sd * shZ, 'shoulder');
+      shoulder.userData.joint = false;   // 메시 없는 순수 피벗
+      torso.add(shoulder);
+      const upper = bone(upperLen, 1.7 * S, body, 'upperarm');
+      upper.rotation.z = -1.52;                 // 기본 착좌 포즈: 팔을 앞으로
+      shoulder.add(upper);
+      const elbow = joint(0, upperLen, 0, 'elbow');
+      elbow.userData.joint = false;
+      upper.add(elbow);
+      const fore = bone(foreLen, 1.5 * S, body, 'forearm');
+      fore.rotation.z = 0.34;                   // 팔꿈치 살짝 굽힘
+      elbow.add(fore);
+      fore.add(sphere(2.2 * S, ch.id === 'volt' ? mat(c.trim, { metal: 0.6, rough: 0.4 }) : white, 0, foreLen, 0, 12));
+      // 손 끝 기준점은 빈 피벗으로 둔다. 메시는 병합 시 제거되므로 참조가 끊긴다
+      const handTip = new T.Object3D();
+      handTip.position.set(0, foreLen, 0);
+      fore.add(handTip);
+      arms.push({ shoulder, upper, elbow, fore, hand: handTip, side: sd, a: upperLen, b: foreLen });
+    });
+
+    /* ---------- 눈 ---------- */
     if (ch.id !== 'volt') {
       const eyeMat = mat('#ffffff', { rough: 0.32 });
       const pupilMat = mat(c.eye, { rough: 0.3 });
       [-1, 1].forEach(sd => {
-        const e = sphere(1.95 * S, eyeMat, front * 0.74, headY + headR * 0.14, sd * headR * 0.4, 12);
-        e.scale.set(0.55, 1.05, 1);
-        g.add(e);
-        const pu = sphere(0.95 * S, pupilMat, front * 0.94, headY + headR * 0.12, sd * headR * 0.42, 10);
-        pu.scale.set(0.55, 1.05, 1);
-        g.add(pu);
-        const hi = sphere(0.42 * S, mat('#ffffff', { rough: 0.1 }), front * 1.02, headY + headR * 0.34, sd * headR * 0.5, 8);
-        g.add(hi);
+        const e = sphere(1.95 * S, eyeMat, front * 0.74, hc + headR * 0.14, sd * headR * 0.4, 12);
+        e.scale.set(0.55, 1.05, 1); headJ.add(e);
+        const pu = sphere(0.95 * S, pupilMat, front * 0.94, hc + headR * 0.12, sd * headR * 0.42, 10);
+        pu.scale.set(0.55, 1.05, 1); headJ.add(pu);
+        headJ.add(sphere(0.42 * S, mat('#ffffff', { rough: 0.1 }), front * 1.02, hc + headR * 0.34, sd * headR * 0.5, 8));
       });
     }
 
-    /* ---- 캐릭터별 특징 ---- */
+    /* ---------- 캐릭터별 특징 ---------- */
+    const H = (y) => hc + y;                    // 머리 로컬 y
+    const B = (y) => chestY + y;                // 몸통 로컬 y
     switch (ch.id) {
-      case 'bbiyak': {                                    // 병아리 파일럿
-        const beak = cone(2.2 * S, 4.4 * S, detail, front * 1.02, headY - headR * 0.30, 0, 8);
-        beak.rotation.z = -Math.PI / 2;
-        g.add(beak);
-        // 이마에 걸친 고글
-        const strap = cyl(headR * 0.98, headR * 0.98, 1.6 * S, dark, 0, headY + headR * 0.52, 0, 16);
-        strap.rotation.x = Math.PI / 2; strap.rotation.z = Math.PI / 2;
-        strap.scale.set(1, 1, 0.82);
-        g.add(strap);
+      case 'bbiyak': {
+        const beak = cone(2.2 * S, 4.4 * S, detail, front * 1.02, H(-headR * 0.30), 0, 8);
+        beak.rotation.z = -Math.PI / 2; headJ.add(beak);
+        const strap = cyl(headR * 0.98, headR * 0.98, 1.6 * S, dark, 0, H(headR * 0.52), 0, 16);
+        strap.rotation.x = Math.PI / 2; strap.rotation.z = Math.PI / 2; strap.scale.set(1, 1, 0.82);
+        headJ.add(strap);
         [-1, 1].forEach(sd => {
-          const ring = torus(2.1 * S, 0.6 * S, trim, front * 0.52, headY + headR * 0.6, sd * headR * 0.42);
-          ring.rotation.y = Math.PI / 2;
-          g.add(ring);
-          const lens = sphere(1.8 * S, mat('#9fd8ff', { rough: 0.15, metal: 0.3 }), front * 0.56, headY + headR * 0.6, sd * headR * 0.42, 10);
-          lens.scale.set(0.4, 1, 1);
-          g.add(lens);
+          const ring = torus(2.1 * S, 0.6 * S, trim, front * 0.52, H(headR * 0.6), sd * headR * 0.42);
+          ring.rotation.y = Math.PI / 2; headJ.add(ring);
+          const lens = sphere(1.8 * S, mat('#9fd8ff', { rough: 0.15, metal: 0.3 }), front * 0.56, H(headR * 0.6), sd * headR * 0.42, 10);
+          lens.scale.set(0.4, 1, 1); headJ.add(lens);
         });
-        // 스카프 + 휘날리는 자락
-        const sc = torus(3.3 * S, 1.4 * S, trim, 0, neckY + 0.6 * S, 0);
-        sc.rotation.x = Math.PI / 2;
-        g.add(sc);
-        const flap = limb(-2 * S, neckY, 1.4 * S, -8 * S, neckY + 3.4 * S, 4.6 * S, 1.3 * S, trim);
-        g.add(flap);
-        // 꽁지깃
+        const sc = torus(3.3 * S, 1.4 * S, trim, 0, B(neckY - chestY - 0.6 * S), 0);
+        sc.rotation.x = Math.PI / 2; torso.add(sc);
+        torso.add(limb(-2 * S, B(neckY - chestY - 1.4 * S), 1.4 * S, -8 * S, B(neckY - chestY + 2.0 * S), 4.6 * S, 1.3 * S, trim));
         [-1, 0, 1].forEach(i => {
-          const f = cone(1.5 * S, 5.2 * S, accent, -torsoR * 0.9, torsoY + 1.6 * S + i * 1.4 * S, i * 2.2 * S, 6);
-          f.rotation.z = 1.9; f.rotation.x = i * 0.24;
-          g.add(f);
+          const f = cone(1.5 * S, 5.2 * S, accent, -torsoR * 0.9, B(0.6 * S + i * 1.4 * S), i * 2.2 * S, 6);
+          f.rotation.z = 1.9; f.rotation.x = i * 0.24; torso.add(f);
         });
-        // 작은 날개
         [-1, 1].forEach(sd => {
-          const w = sphere(3.1 * S, accent, -0.6 * S, torsoY + 1.2 * S, sd * (torsoR + 0.6 * S), 10);
-          w.scale.set(0.9, 1.25, 0.35);
-          g.add(w);
+          const w = sphere(3.1 * S, accent, -0.6 * S, B(0.2 * S), sd * (torsoR + 0.6 * S), 10);
+          w.scale.set(0.9, 1.25, 0.35); torso.add(w);
         });
         break;
       }
-      case 'momo': {                                      // 토끼
+      case 'momo': {
         [-1, 1].forEach(sd => {
-          const ear = limb(sd * headR * 0.34, headY + headR * 0.7, 0,
-            sd * headR * 0.95, headY + headR * 2.5, -headR * 0.75, 1.55 * S, body);
-          g.add(ear);
-          const inner = limb(sd * headR * 0.34, headY + headR * 0.78, 0.5 * S,
-            sd * headR * 0.9, headY + headR * 2.35, -headR * 0.45, 0.85 * S, detail);
-          g.add(inner);
+          headJ.add(limb(sd * headR * 0.34, H(headR * 0.7), 0, sd * headR * 0.95, H(headR * 2.5), -headR * 0.75, 1.55 * S, body));
+          headJ.add(limb(sd * headR * 0.34, H(headR * 0.78), 0.5 * S, sd * headR * 0.9, H(headR * 2.35), -headR * 0.45, 0.85 * S, detail));
         });
-        g.add(sphere(1.15 * S, detail, front * 0.98, headY - headR * 0.2, 0, 10));
-        [-1, 1].forEach(sd => {                            // 수염
+        headJ.add(sphere(1.15 * S, detail, front * 0.98, H(-headR * 0.2), 0, 10));
+        [-1, 1].forEach(sd => {
           for (let i = -1; i <= 1; i++) {
-            const wk = box(3.4 * S, 0.22 * S, 0.22 * S, white, front * 0.85, headY - headR * 0.18 + i * 0.7 * S, sd * headR * 0.42);
-            wk.rotation.y = sd * 0.4; wk.rotation.z = i * 0.16;
-            g.add(wk);
+            const wk = box(3.4 * S, 0.22 * S, 0.22 * S, white, front * 0.85, H(-headR * 0.18 + i * 0.7 * S), sd * headR * 0.42);
+            wk.rotation.y = sd * 0.4; wk.rotation.z = i * 0.16; headJ.add(wk);
           }
         });
-        const tail = sphere(2.8 * S, white, -torsoR * 1.05, torsoY - 1.2 * S, 0, 12);
-        g.add(tail);
+        pelvis.add(sphere(2.8 * S, white, -torsoR * 1.0, 1.4 * S, 0, 12));
         break;
       }
-      case 'volt': {                                      // 소형 로봇
+      case 'volt': {
         const visor = rounded(5.6 * S, 3.0 * S, 7.4 * S, 0.9 * S, mat('#141a26', { rough: 0.15, metal: 0.5 }));
-        visor.position.set(front * 0.66, headY + headR * 0.10, 0);
-        visor.rotation.x = Math.PI / 2;
-        g.add(visor);
+        visor.position.set(front * 0.66, H(headR * 0.10), 0); visor.rotation.x = Math.PI / 2;
+        headJ.add(visor);
         const glow = rounded(3.4 * S, 1.4 * S, 5.8 * S, 0.5 * S, emissiveMat(c.detail, c.detail, 3.4));
-        glow.position.set(front * 0.86, headY + headR * 0.10, 0);
-        glow.rotation.x = Math.PI / 2;
-        glow.castShadow = false;
-        g.add(glow);
-        g.add(cyl(0.35 * S, 0.35 * S, 5.4 * S, trim, -1.2 * S, headY + headR * 1.3, 0, 6));
-        const bulb = sphere(1.15 * S, emissiveMat(c.accent, c.detail, 3.4), -1.2 * S, headY + headR * 1.3 + 3 * S, 0, 10);
-        bulb.castShadow = false;
-        g.add(bulb);
-        // 가슴 LED 패널
+        glow.position.set(front * 0.86, H(headR * 0.10), 0); glow.rotation.x = Math.PI / 2;
+        glow.castShadow = false; headJ.add(glow);
+        headJ.add(cyl(0.35 * S, 0.35 * S, 5.4 * S, trim, -1.2 * S, H(headR * 1.3), 0, 6));
+        const bulb = sphere(1.15 * S, emissiveMat(c.accent, c.detail, 3.4), -1.2 * S, H(headR * 1.3 + 3 * S), 0, 10);
+        bulb.castShadow = false; headJ.add(bulb);
         const panel = rounded(5.2 * S, 4.4 * S, 1.4 * S, 0.6 * S, mat(c.trim, { rough: 0.3, metal: 0.7 }));
-        panel.position.set(torsoR * 0.82, torsoY + 0.6 * S, 0);
-        panel.rotation.z = Math.PI / 2;
-        g.add(panel);
+        panel.position.set(torsoR * 0.82, B(-0.4 * S), 0); panel.rotation.z = Math.PI / 2;
+        torso.add(panel);
         for (let i = 0; i < 3; i++) {
-          const bar = box(0.6 * S, 3.0 * S, 0.9 * S, emissiveMat(c.detail, c.detail, 2.6),
-            torsoR * 0.95, torsoY + 0.6 * S, (i - 1) * 1.3 * S);
-          bar.castShadow = false;
-          g.add(bar);
+          const bar = box(0.6 * S, 3.0 * S, 0.9 * S, emissiveMat(c.detail, c.detail, 2.6), torsoR * 0.95, B(-0.4 * S), (i - 1) * 1.3 * S);
+          bar.castShadow = false; torso.add(bar);
         }
-        [-1, 1].forEach(sd => {                            // 각진 어깨
-          const sh = rounded(3.8 * S, 3.0 * S, 2.6 * S, 0.7 * S, mat(c.trim, { rough: 0.35, metal: 0.6 }));
-          sh.position.set(0.2 * S, shoY + 0.6 * S, sd * (shZ + 0.4 * S));
-          g.add(sh);
-        });
-        break;
-      }
-      case 'koko': {                                      // 아기 공룡
-        const snout = capsule(2.9 * S, 2.6 * S, body, front * 0.72, headY - headR * 0.22, 0);
-        snout.rotation.z = Math.PI / 2;
-        g.add(snout);
-        [-1, 1].forEach(sd => g.add(sphere(0.55 * S, dark, front * 1.32, headY - headR * 0.1, sd * 1.35 * S, 8)));
-        // 등지느러미
-        [0, 1, 2].forEach(i => {
-          const sp = cone(1.5 * S - i * 0.22 * S, 4.6 * S - i * 0.7 * S, detail,
-            -torsoR * 0.72, torsoY + 3.4 * S - i * 3.0 * S, 0, 6);
-          sp.rotation.z = 0.55;
-          g.add(sp);
-        });
-        // 꼬리
-        g.add(limb(-torsoR * 0.9, torsoY - 2.4 * S, 0, -torsoR * 2.6, torsoY - 4.2 * S, 0, 1.9 * S, body));
-        break;
-      }
-      case 'tango': {                                     // 여우 파일럿
-        const helm = mesh(new T.SphereGeometry(headR * 1.06, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.58), trim);
-        helm.position.set(0, headY + headR * 0.06, 0);
-        g.add(helm);
-        [-1, 1].forEach(sd => {                            // 헬멧 밖으로 나온 귀
-          const ear = cone(1.7 * S, 4.4 * S, body, -headR * 0.1, headY + headR * 1.15, sd * headR * 0.6, 7);
-          ear.rotation.x = sd * 0.32;
-          g.add(ear);
-          const tip = cone(1.0 * S, 1.7 * S, dark, -headR * 0.1, headY + headR * 1.72, sd * headR * 0.68, 7);
-          tip.rotation.x = sd * 0.32;
-          g.add(tip);
-        });
-        const snout = capsule(2.3 * S, 2.8 * S, body, front * 0.78, headY - headR * 0.26, 0);
-        snout.rotation.z = Math.PI / 2;
-        g.add(snout);
-        g.add(sphere(2.0 * S, detail, front * 1.28, headY - headR * 0.3, 0, 10));
-        g.add(sphere(0.95 * S, dark, front * 1.5, headY - headR * 0.22, 0, 8));
-        // 큰 꼬리
-        for (let i = 0; i < 4; i++) {
-          const tl = sphere((3.2 - i * 0.5) * S, i === 3 ? white : accent,
-            -torsoR * (1.0 + i * 0.62), torsoY - 1.6 * S + i * 1.5 * S, 0, 10);
-          g.add(tl);
-        }
-        break;
-      }
-      case 'luna': {                                      // 고양이
         [-1, 1].forEach(sd => {
-          const ear = cone(2.0 * S, 4.3 * S, body, -headR * 0.05, headY + headR * 1.05, sd * headR * 0.52, 7);
-          ear.rotation.x = sd * 0.26;
-          g.add(ear);
-          const inner = cone(1.05 * S, 2.4 * S, detail, headR * 0.12, headY + headR * 1.02, sd * headR * 0.52, 7);
-          inner.rotation.x = sd * 0.26;
-          g.add(inner);
+          const sh = rounded(3.8 * S, 3.0 * S, 2.6 * S, 0.7 * S, mat(c.trim, { rough: 0.35, metal: 0.6 }));
+          sh.position.set(0.2 * S, shoY + 0.6 * S, sd * (shZ + 0.4 * S)); torso.add(sh);
         });
-        const muzzle = sphere(2.5 * S, belly, front * 0.85, headY - headR * 0.3, 0, 12);
-        muzzle.scale.set(0.7, 0.75, 1.2);
-        g.add(muzzle);
-        const nose = cone(0.95 * S, 1.3 * S, detail, front * 1.14, headY - headR * 0.16, 0, 6);
-        nose.rotation.z = -Math.PI / 2;
-        g.add(nose);
+        break;
+      }
+      case 'koko': {
+        const snout = capsule(2.9 * S, 2.6 * S, body, front * 0.72, H(-headR * 0.22), 0);
+        snout.rotation.z = Math.PI / 2; headJ.add(snout);
+        [-1, 1].forEach(sd => headJ.add(sphere(0.55 * S, dark, front * 1.32, H(-headR * 0.1), sd * 1.35 * S, 8)));
+        [0, 1, 2].forEach(i => {
+          const sp = cone(1.5 * S - i * 0.22 * S, 4.6 * S - i * 0.7 * S, detail, -torsoR * 0.72, B(2.4 * S - i * 3.0 * S), 0, 6);
+          sp.rotation.z = 0.55; torso.add(sp);
+        });
+        pelvis.add(limb(-torsoR * 0.9, 1.6 * S, 0, -torsoR * 2.6, 0.2 * S, 0, 1.9 * S, body));
+        break;
+      }
+      case 'tango': {
+        const helm = mesh(new T.SphereGeometry(headR * 1.06, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.58), trim);
+        helm.position.y = H(headR * 0.06); headJ.add(helm);
+        [-1, 1].forEach(sd => {
+          const ear = cone(1.7 * S, 4.4 * S, body, -headR * 0.1, H(headR * 1.15), sd * headR * 0.6, 7);
+          ear.rotation.x = sd * 0.32; headJ.add(ear);
+          const tip = cone(1.0 * S, 1.7 * S, dark, -headR * 0.1, H(headR * 1.72), sd * headR * 0.68, 7);
+          tip.rotation.x = sd * 0.32; headJ.add(tip);
+        });
+        const snout = capsule(2.3 * S, 2.8 * S, body, front * 0.78, H(-headR * 0.26), 0);
+        snout.rotation.z = Math.PI / 2; headJ.add(snout);
+        headJ.add(sphere(2.0 * S, detail, front * 1.28, H(-headR * 0.3), 0, 10));
+        headJ.add(sphere(0.95 * S, dark, front * 1.5, H(-headR * 0.22), 0, 8));
+        for (let i = 0; i < 4; i++) {
+          pelvis.add(sphere((3.2 - i * 0.5) * S, i === 3 ? white : accent, -torsoR * (1.0 + i * 0.62), 1.2 * S + i * 1.5 * S, 0, 10));
+        }
+        break;
+      }
+      case 'luna': {
+        [-1, 1].forEach(sd => {
+          const ear = cone(2.0 * S, 4.3 * S, body, -headR * 0.05, H(headR * 1.05), sd * headR * 0.52, 7);
+          ear.rotation.x = sd * 0.26; headJ.add(ear);
+          const inner = cone(1.05 * S, 2.4 * S, detail, headR * 0.12, H(headR * 1.02), sd * headR * 0.52, 7);
+          inner.rotation.x = sd * 0.26; headJ.add(inner);
+        });
+        const muzzle = sphere(2.5 * S, belly, front * 0.85, H(-headR * 0.3), 0, 12);
+        muzzle.scale.set(0.7, 0.75, 1.2); headJ.add(muzzle);
+        const nose = cone(0.95 * S, 1.3 * S, detail, front * 1.14, H(-headR * 0.16), 0, 6);
+        nose.rotation.z = -Math.PI / 2; headJ.add(nose);
         [-1, 1].forEach(sd => {
           for (let i = -1; i <= 1; i++) {
-            const wk = box(3.6 * S, 0.22 * S, 0.22 * S, white, front * 0.82, headY - headR * 0.24 + i * 0.72 * S, sd * headR * 0.44);
-            wk.rotation.y = sd * 0.42; wk.rotation.z = i * 0.18;
-            g.add(wk);
+            const wk = box(3.6 * S, 0.22 * S, 0.22 * S, white, front * 0.82, H(-headR * 0.24 + i * 0.72 * S), sd * headR * 0.44);
+            wk.rotation.y = sd * 0.42; wk.rotation.z = i * 0.18; headJ.add(wk);
           }
         });
-        const sc = torus(3.4 * S, 1.3 * S, trim, 0, neckY + 0.4 * S, 0);
-        sc.rotation.x = Math.PI / 2;
-        g.add(sc);
-        // 세워 올린 꼬리
+        const sc = torus(3.4 * S, 1.3 * S, trim, 0, B(neckY - chestY - 0.8 * S), 0);
+        sc.rotation.x = Math.PI / 2; torso.add(sc);
         for (let i = 0; i < 4; i++) {
-          g.add(sphere((1.9 - i * 0.22) * S, body,
-            -torsoR * 1.1 - Math.sin(i * 0.5) * 1.4 * S, torsoY - 1.0 * S + i * 3.0 * S, 0, 9));
+          pelvis.add(sphere((1.9 - i * 0.22) * S, body, -torsoR * 1.1 - Math.sin(i * 0.5) * 1.4 * S, 1.2 * S + i * 3.0 * S, 0, 9));
         }
         break;
       }
-      case 'bumper': {                                    // 코뿔소
-        const snout = sphere(3.7 * S, body, front * 0.72, headY - headR * 0.3, 0, 14);
-        snout.scale.set(1.05, 0.8, 1.05);
-        g.add(snout);
-        // 콧등에서 앞위로 크게 솟은 상아빛 뿔
-        const horn = cone(2.8 * S, 10.5 * S, trim, front * 1.15, headY - headR * 0.02, 0, 10);
-        horn.rotation.z = -1.15;
-        g.add(horn);
-        const horn2 = cone(1.5 * S, 4.2 * S, trim, front * 0.62, headY + headR * 0.66, 0, 8);
-        horn2.rotation.z = -0.85;
-        g.add(horn2);
+      case 'bumper': {
+        const snout = sphere(3.7 * S, body, front * 0.72, H(-headR * 0.3), 0, 14);
+        snout.scale.set(1.05, 0.8, 1.05); headJ.add(snout);
+        const horn = cone(2.8 * S, 10.5 * S, trim, front * 1.15, H(-headR * 0.02), 0, 10);
+        horn.rotation.z = -1.15; headJ.add(horn);
+        const horn2 = cone(1.5 * S, 4.2 * S, trim, front * 0.62, H(headR * 0.66), 0, 8);
+        horn2.rotation.z = -0.85; headJ.add(horn2);
         [-1, 1].forEach(sd => {
-          const ear = sphere(1.6 * S, body, -headR * 0.55, headY + headR * 0.78, sd * headR * 0.72, 8);
-          ear.scale.set(0.45, 1.35, 0.75);
-          ear.rotation.x = sd * 0.3;
-          g.add(ear);
-          // 어깨 철판
+          const ear = sphere(1.6 * S, body, -headR * 0.55, H(headR * 0.78), sd * headR * 0.72, 8);
+          ear.scale.set(0.45, 1.35, 0.75); ear.rotation.x = sd * 0.3; headJ.add(ear);
           const pl = rounded(6.4 * S, 4.6 * S, 3.4 * S, 1.2 * S, mat(c.accent, { rough: 0.55, metal: 0.45 }));
-          pl.position.set(0.2 * S, shoY + 1.4 * S, sd * (shZ + 0.9 * S));
-          pl.rotation.z = sd * 0.12;
-          g.add(pl);
-          for (let i = 0; i < 3; i++) {
-            g.add(sphere(0.6 * S, trim, 2.4 * S, shoY + 2.6 * S, sd * (shZ + 0.9 * S) + (i - 1) * 1.6 * S, 6));
-          }
+          pl.position.set(0.2 * S, shoY + 1.2 * S, sd * (shZ + 0.9 * S)); pl.rotation.z = sd * 0.12;
+          torso.add(pl);
+          for (let i = 0; i < 3; i++) torso.add(sphere(0.6 * S, trim, 2.4 * S, shoY + 2.4 * S, sd * (shZ + 0.9 * S) + (i - 1) * 1.6 * S, 6));
         });
         break;
       }
-      case 'magma': {                                     // 암석 골렘
+      case 'magma': {
         const crack = emissiveMat(c.detail, c.detail, 2.8);
-        // 정수리 뿔
         [-1, 1].forEach(sd => {
-          const h = cone(2.7 * S, 6.0 * S, mat(c.trim, { rough: 0.95, flat: true }),
-            -headR * 0.15, headY + headR * 1.02, sd * headR * 0.58, 6);
-          h.rotation.z = 0.16; h.rotation.x = sd * 0.34;
-          g.add(h);
-          const tip = cone(1.2 * S, 2.0 * S, mat('#141014', { rough: 1, flat: true }),
-            -headR * 0.15 - 0.6 * S, headY + headR * 1.02 + 3.0 * S, sd * headR * 0.58 + sd * 1.1 * S, 6);
-          tip.rotation.z = 0.16; tip.rotation.x = sd * 0.34;
-          g.add(tip);
+          const h = cone(2.7 * S, 6.0 * S, mat(c.trim, { rough: 0.95, flat: true }), -headR * 0.15, H(headR * 1.02), sd * headR * 0.58, 6);
+          h.rotation.z = 0.16; h.rotation.x = sd * 0.34; headJ.add(h);
+          const tip = cone(1.2 * S, 2.0 * S, mat('#141014', { rough: 1, flat: true }), -headR * 0.15 - 0.6 * S, H(headR * 1.02 + 3.0 * S), sd * headR * 0.58 + sd * 1.1 * S, 6);
+          tip.rotation.z = 0.16; tip.rotation.x = sd * 0.34; headJ.add(tip);
         });
-        // 발광 균열
-        [[front * 0.82, headY + headR * 0.52, headR * 0.24, 0.5],
-         [front * 0.86, headY - headR * 0.3, -headR * 0.34, -0.7],
-         [torsoR * 0.95, torsoY + 2.6 * S, 1.8 * S, 0.6],
-         [torsoR * 0.95, torsoY - 1.6 * S, -2.2 * S, -0.4],
-         [torsoR * 0.3, torsoY + 1.0 * S, torsoR * 0.92, 0.2]].forEach(k => {
+        [[front * 0.82, H(headR * 0.52), headR * 0.24, 0.5],
+         [front * 0.86, H(-headR * 0.3), -headR * 0.34, -0.7]].forEach(k => {
           const b = box(1.15 * S, 5.0 * S, 1.15 * S, crack, k[0], k[1], k[2]);
-          b.rotation.z = k[3]; b.castShadow = false;
-          g.add(b);
+          b.rotation.z = k[3]; b.castShadow = false; headJ.add(b);
         });
-        // 가슴 코어
-        const core = sphere(2.3 * S, emissiveMat(c.accent, c.detail, 3.2), torsoR * 0.82, torsoY + 0.4 * S, 0, 12);
-        core.castShadow = false;
-        g.add(core);
-        // 각진 어깨 바위
+        [[torsoR * 0.95, B(1.0 * S), 1.8 * S, 0.6],
+         [torsoR * 0.95, B(-3.2 * S), -2.2 * S, -0.4],
+         [torsoR * 0.3, B(-0.6 * S), torsoR * 0.92, 0.2]].forEach(k => {
+          const b = box(1.15 * S, 5.0 * S, 1.15 * S, crack, k[0], k[1], k[2]);
+          b.rotation.z = k[3]; b.castShadow = false; torso.add(b);
+        });
+        const core = sphere(2.3 * S, emissiveMat(c.accent, c.detail, 3.2), torsoR * 0.82, B(-1.2 * S), 0, 12);
+        core.castShadow = false; torso.add(core);
         [-1, 1].forEach(sd => {
           const rock = mesh(new T.IcosahedronGeometry(3.9 * S, 0), mat(c.belly, { rough: 0.95, flat: true }));
-          rock.position.set(0.4 * S, shoY + 1.2 * S, sd * (shZ + 0.8 * S));
-          rock.rotation.set(sd * 0.5, 0.8, 0.3);
-          g.add(rock);
+          rock.position.set(0.4 * S, shoY + 1.0 * S, sd * (shZ + 0.8 * S));
+          rock.rotation.set(sd * 0.5, 0.8, 0.3); torso.add(rock);
         });
-        // 턱
         const jaw = rounded(5.2 * S, 2.4 * S, 6.6 * S, 0.8 * S, mat(c.belly, { rough: 0.95, flat: true }));
-        jaw.position.set(front * 0.5, headY - headR * 0.62, 0);
-        jaw.rotation.x = Math.PI / 2;
-        g.add(jaw);
+        jaw.position.set(front * 0.5, H(-headR * 0.62), 0); jaw.rotation.x = Math.PI / 2;
+        headJ.add(jaw);
         break;
       }
     }
 
-    g.userData.scaleClass = S;
-    return g;
+    root.userData.scaleClass = S;
+    root.userData.rig = {
+      pelvis, torso, head: headJ, arms, legs,
+      restTorso: { x: 0, z: 0 }, S,
+      shoulderLocal: arms.map(a => a.shoulder.position.clone())
+    };
+    return root;
+  }
+
+  /** 두 점을 잇는 캡슐 (꼬리·귀 등 고정 부위용) */
+  function limb(ax, ay, az, bx, by, bz, r, m) {
+    const a = new T.Vector3(ax, ay, az), b = new T.Vector3(bx, by, bz);
+    const dir = new T.Vector3().subVectors(b, a);
+    const len = dir.length();
+    const mm = mesh(new T.CapsuleGeometry(r, Math.max(0.2, len - r * 2), 5, 12), m);
+    mm.position.copy(a).addScaledVector(dir, 0.5);
+    mm.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), dir.clone().normalize());
+    return mm;
   }
 
   /* =============================================================
@@ -505,15 +524,15 @@
 
     // 시트
     const seat = rounded(13, W * 0.5, 3, 2, darkMat);
-    seat.position.set(-L * 0.12, wr + 5.2, 0);
+    seat.position.set(-L * 0.06, wr + 5.2, 0);
     g.add(seat);
     const seatBack = rounded(3.2, W * 0.5, 12, 1.6, darkMat);
-    seatBack.position.set(-L * 0.26, wr + 10, 0);
+    seatBack.position.set(-L * 0.19, wr + 10, 0);
     seatBack.rotation.z = 0.16;
     g.add(seatBack);
 
     // 스티어링 휠
-    const steer = torus(3.5, 0.75, darkMat, L * 0.21, wr + 10.2, 0);
+    const steer = torus(3.5, 0.75, darkMat, L * 0.07, wr + 11.6, 0);
     steer.rotation.y = Math.PI / 2;
     steer.rotation.z = 0.55;
     g.add(steer);
@@ -601,9 +620,18 @@
 
     /* 드라이버 */
     const driver = buildCharacter(ch);
-    driver.position.set(-L * 0.10, wr + 2.2, 0);
+    driver.position.set(-L * 0.05, wr + 5.4, 0);
     g.add(driver);
     g.userData.driver = driver;
+    g.userData.rig = driver.userData.rig || null;
+
+    // 페달 (발이 닿는 위치)
+    [-1, 1].forEach(side => {
+      const pedal = rounded(5.0, 3.0, 1.2, 0.5, darkMat);
+      pedal.position.set(L * 0.30, wr - 1.0, side * 5.2);
+      pedal.rotation.z = 0.35;
+      g.add(pedal);
+    });
 
     g.userData.dims = { L, W, wr };
     optimize(g);
@@ -611,52 +639,57 @@
   }
 
   /**
-   * 정적 파트를 머티리얼 단위로 병합해 드로우콜을 줄인다.
-   * userData.dynamic 이 붙은 노드(바퀴/스티어링)와 그 자식은 그대로 둔다.
+   * 지오메트리 병합으로 드로우콜을 줄인다.
+   * userData.joint 가 붙은 노드는 '병합 경계'가 되어, 그 안의 메시들만 서로 합쳐진다.
+   * 덕분에 관절은 런타임에 따로 움직일 수 있으면서 드로우콜은 최소로 유지된다.
+   * userData.dynamic / external 이 붙은 서브트리는 손대지 않는다.
    */
   function optimize(root) {
     const BGU = T.BufferGeometryUtils;
     if (!BGU || !BGU.mergeGeometries) return root;
     root.updateMatrixWorld(true);
-    const groups = new Map();
+
+    const buckets = new Map();          // ownerNode -> Map(material -> [geometry])
     const remove = [];
-    (function walk(o, dynamic) {
-      const dyn = dynamic || !!o.userData.dynamic || !!o.userData.external;
-      if (o.isSkinnedMesh) return;                 // 스킨드 메시는 병합 불가
-      if (o.isMesh && !dyn) {
-        const key = o.material;
-        if (!groups.has(key)) groups.set(key, []);
-        // 인덱스 유무가 섞이면 병합이 실패하므로 전부 non-indexed 로 통일
-        let gg = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
-        gg.applyMatrix4(o.matrixWorld);
-        // 병합 호환을 위해 필요한 속성만 남긴다
-        for (const name of Object.keys(gg.attributes)) {
-          if (name !== 'position' && name !== 'normal' && name !== 'uv') gg.deleteAttribute(name);
+    const inv = new T.Matrix4(), tmp = new T.Matrix4();
+
+    (function collect(node, owner, dynamic) {
+      for (const child of node.children.slice()) {
+        const dyn = dynamic || !!child.userData.dynamic || !!child.userData.external;
+        const nextOwner = child.userData.joint ? child : owner;
+        if (child.isSkinnedMesh) { collect(child, nextOwner, true); continue; }
+        if (child.isMesh && !dyn) {
+          let gg = child.geometry.index ? child.geometry.toNonIndexed() : child.geometry.clone();
+          inv.copy(owner.matrixWorld).invert();
+          gg.applyMatrix4(tmp.copy(inv).multiply(child.matrixWorld));
+          for (const name of Object.keys(gg.attributes)) {
+            if (name !== 'position' && name !== 'normal' && name !== 'uv') gg.deleteAttribute(name);
+          }
+          if (!gg.attributes.uv) {
+            gg.setAttribute('uv', new T.BufferAttribute(new Float32Array(gg.attributes.position.count * 2), 2));
+          }
+          if (!buckets.has(owner)) buckets.set(owner, new Map());
+          const bm = buckets.get(owner);
+          if (!bm.has(child.material)) bm.set(child.material, []);
+          bm.get(child.material).push(gg);
+          remove.push(child);
         }
-        if (!gg.attributes.uv) {
-          const n = gg.attributes.position.count;
-          gg.setAttribute('uv', new T.BufferAttribute(new Float32Array(n * 2), 2));
-        }
-        groups.get(key).push(gg);
-        remove.push(o);
+        collect(child, nextOwner, dyn);
       }
-      for (const c of o.children.slice()) walk(c, dyn);
-    })(root, false);
+    })(root, root, false);
 
     for (const o of remove) if (o.parent) o.parent.remove(o);
-    groups.forEach((geos, material) => {
-      let merged;
-      try { merged = BGU.mergeGeometries(geos, false); } catch (e) { merged = null; }
-      geos.forEach(gg => gg.dispose && gg.dispose());
-      if (!merged) return;
-      const m = new T.Mesh(merged, material);
-      m.castShadow = true; m.receiveShadow = true;
-      root.add(m);
+    buckets.forEach((byMat, owner) => {
+      byMat.forEach((geos, material) => {
+        let merged;
+        try { merged = BGU.mergeGeometries(geos, false); } catch (e) { merged = null; }
+        geos.forEach(gg => gg.dispose && gg.dispose());
+        if (!merged) return;
+        const m = new T.Mesh(merged, material);
+        m.castShadow = true; m.receiveShadow = true;
+        owner.add(m);
+      });
     });
-    // 빈 그룹 정리
-    for (const c of root.children.slice()) {
-      if (c.isGroup && c.children.length === 0) root.remove(c);
-    }
     return root;
   }
 

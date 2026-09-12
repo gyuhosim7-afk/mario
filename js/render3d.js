@@ -643,12 +643,15 @@
       const hop = k.hopT > 0 ? Math.sin((0.26 - k.hopT) / 0.26 * Math.PI) * 6 : 0;
       m.position.y = hop;
 
+      // 드라이버 착좌 리그 (팔 IK · 상체 롤 · 머리) — 멀리 있는 카트는 생략
+      if (global.Rig && m.userData.rig && camD < 700) global.Rig.update(m, k, dt, this.time);
+
       // 바퀴 회전 / 조향
       const spin = k.speed * dt * 0.14;
       for (const w of m.userData.wheels) w.rotation.z -= spin;
       const steerAng = (k.input.steer || 0) * 0.4 + (k.drifting ? k.driftDir * 0.25 : 0);
       for (const w of m.userData.frontWheels) w.rotation.y = -steerAng;
-      if (m.userData.steer) m.userData.steer.rotation.z = 0.55 + steerAng * 0.9;
+      if (m.userData.steer && !m.userData.rig) m.userData.steer.rotation.z = 0.55 + steerAng * 0.9;
 
       // 무적 점멸 / 스타 오라
       const blink = k.invulnTimer > 0 && k.state !== 'RESPAWN' && Math.floor(this.time * 14) % 2 === 0;
