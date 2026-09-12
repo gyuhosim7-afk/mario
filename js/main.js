@@ -112,6 +112,15 @@
       const steps = [];
       let track, karts = [];
 
+      steps.push(async () => {
+        // 외부 GLB 에셋이 있으면 먼저 불러온다 (없으면 즉시 통과)
+        if (global.Assets && !global.Assets._attempted) {
+          title.textContent = '외부 에셋 확인 중…';
+          await global.Assets.init();
+        }
+        bar.style.width = '12%';
+      });
+
       steps.push(() => {
         track = global.TrackSystem.get(cfg.trackId);
         track.laps = cfg.laps;
@@ -183,7 +192,7 @@
       // 프레임을 나눠 실행해 로딩 진행률이 갱신되도록 한다
       const run = (i) => {
         if (i >= steps.length) return;
-        requestAnimationFrame(() => { steps[i](); setTimeout(() => run(i + 1), 0); });
+        requestAnimationFrame(async () => { await steps[i](); setTimeout(() => run(i + 1), 0); });
       };
       run(0);
     },

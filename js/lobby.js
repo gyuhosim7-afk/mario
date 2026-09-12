@@ -65,6 +65,20 @@
       });
 
       document.getElementById('btnSpin').addEventListener('click', () => { this.spinning = !this.spinning; });
+      const be = document.getElementById('btnExport');
+      if (be) be.addEventListener('click', async () => {
+        be.disabled = true;
+        const before = be.textContent;
+        try {
+          const obj = global.Models.buildKart(this.combo);
+          const size = await global.Assets.exportGLB(obj, this.combo.character.id + '-kart.glb');
+          be.textContent = '✓ ' + Math.round(size / 1024) + 'KB';
+        } catch (e) {
+          be.textContent = '실패';
+          console.error(e);
+        }
+        setTimeout(() => { be.textContent = before; be.disabled = false; }, 2200);
+      });
       document.getElementById('btnRoll').addEventListener('click', () => this.simulateRoll());
       this.$.rankSlider.addEventListener('input', () => this.renderProbs());
       this.$.btnReady.addEventListener('click', () => this.toggleReady());

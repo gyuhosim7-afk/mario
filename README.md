@@ -177,18 +177,45 @@ layout: [
 * **UI 아이콘** — 아이템 아이콘과 로비 파츠 썸네일은 오프스크린 WebGL 렌더러로
   3D 모델을 구워 캔버스로 뽑아 씁니다(이모지 폰트 의존 없음).
 
+## 외부 3D 모델 넣기 (선택)
+
+기본은 전부 절차적 생성이지만, **`assets/manifest.json` 을 만들고 GLB / glTF / FBX 를
+넣으면 해당 캐릭터·프롭을 통째로 대체**할 수 있습니다. 매니페스트가 없으면
+아무 일도 일어나지 않습니다.
+
+```jsonc
+{
+  "characters": { "koko": { "file": "characters/koko.glb", "height": 34, "yaw": 90 } },
+  "props":      { "tree": { "file": "props/tree.glb", "height": 90 } }
+}
+```
+
+* 불러온 모델은 **바닥 접지 + 중심 정렬 + 목표 높이**로 자동 정규화되고,
+  정면(+X)까지 맞춰집니다
+* 애니메이션이 들어 있으면 `AnimationMixer` 로 자동 재생 (스킨드 메시는 지오메트리
+  병합 대상에서 자동 제외)
+* **Draco 압축 GLB** 도 `vendor/draco/` 디코더로 바로 읽힙니다
+* 반대로 로비 프리뷰의 **⬇ GLB** 버튼을 누르면 현재 캐릭터+카트를 GLB 로 내보내
+  블렌더 등에서 다듬은 뒤 되돌릴 수 있습니다
+* `file://` 로 열면 브라우저가 외부 파일을 못 읽습니다. 에셋을 쓸 땐 로컬 서버로 띄우세요
+
+에셋 출처별 라이선스와 옵션 전체는 [`assets/README.md`](assets/README.md) 참고.
+상용 게임에서 립한 모델은 넣지 마세요.
+
 ## 파일 구조
 
 ```
 index.html          화면 구조 (로비 / 로딩 / 레이스 / 결과 / 도움말)
 css/style.css       UI 스타일 · 반응형 레이아웃
-vendor/             three.js r186 번들 (MIT) + 재생성 방법
+vendor/             three.js r186 번들 (MIT) + Draco 디코더 + 재생성 방법
+assets/             외부 GLB/FBX 를 넣으면 절차적 모델을 대체 (기본은 비어 있음)
 js/data.js          캐릭터 · 파츠 · 아이템 · 가중치 테이블 · 트랙 정의
 js/stats.js         파츠 스탯 합산 → 물리 제어 값 변환
 js/items.js         순위 기반 가중치 룰렛 + 연출 상태 머신
 js/textures.js      절차적 캔버스 텍스처 + 노멀맵 생성
 js/models.js        캐릭터/카트/아이템/오브젝트 3D 모델 + 지오메트리 병합
 js/icons.js         오프스크린 3D 렌더러로 아이콘·썸네일 굽기
+js/assets.js        외부 GLB/glTF/FBX 오버라이드 로더 + GLB 내보내기
 js/track.js         스플라인 트랙 · 노면 판정 맵 · 체크포인트 · 오브젝트 배치
 js/kart.js          주행 물리 적분 · 드리프트/미니터보 · 피격 FSM
 js/ai.js            CPU 드라이버 (라인 추종 · 코너 감속 · 아이템 판단)

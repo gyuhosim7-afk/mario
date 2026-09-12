@@ -1,0 +1,8 @@
+{
+  "characters": {
+    "koko": { "file": "characters/koko.glb", "height": 34, "yaw": 90 }
+  },
+  "props": {
+    "tree": { "file": "props/tree.glb", "height": 90 }
+  }
+}

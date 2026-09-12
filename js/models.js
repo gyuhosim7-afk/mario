@@ -116,6 +116,10 @@
   }
 
   function buildCharacter(ch) {
+    // assets/manifest.json 에 등록된 외부 모델이 있으면 그걸 쓴다
+    const ext = global.Assets && global.Assets.character(ch.id);
+    if (ext) { ext.userData.external = true; return ext; }
+
     const g = new T.Group();
     const c = ch.colors;
     const heavy = ch.cls === 'heavy', light = ch.cls === 'light';
@@ -617,7 +621,8 @@
     const groups = new Map();
     const remove = [];
     (function walk(o, dynamic) {
-      const dyn = dynamic || !!o.userData.dynamic;
+      const dyn = dynamic || !!o.userData.dynamic || !!o.userData.external;
+      if (o.isSkinnedMesh) return;                 // 스킨드 메시는 병합 불가
       if (o.isMesh && !dyn) {
         const key = o.material;
         if (!groups.has(key)) groups.set(key, []);
@@ -827,6 +832,9 @@
    * 트랙 오브젝트 / 배경
    * ============================================================= */
   function buildProp(type) {
+    const ext = global.Assets && global.Assets.prop(type);
+    if (ext) { ext.userData.external = true; return ext; }
+
     const g = new T.Group();
     switch (type) {
       case 'tree': {

@@ -350,6 +350,7 @@
       if (this.trackGroup) { this._disposeGroup(this.trackGroup); sc.remove(this.trackGroup); }
       this.kartNodes.forEach(n => sc.remove(n.group));
       this.kartNodes.clear();
+      if (global.Assets) global.Assets.clearMixers();
       this.hazardNodes.forEach(n => sc.remove(n));
       this.hazardNodes.clear();
       this.particles.clear();
@@ -771,6 +772,9 @@
           im.instanceMatrix.needsUpdate = true;
         });
       }
+
+      // 외부 에셋 애니메이션
+      if (global.Assets && dt > 0) global.Assets.update(dt);
 
       // 파티클
       this.particles.update(dt);
