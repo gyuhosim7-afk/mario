@@ -102,6 +102,7 @@
     placeAt(slot) {
       this.x = slot.x; this.y = slot.y; this.angle = slot.angle;
       const p = this.track.project(this.x, this.y);
+      this._hasNode = true;
       this.node = p.index; this._prevNode = p.index;
       this.lap = 0; this.preStart = true;
       // 그리드는 스타트 라인 뒤쪽이므로 이미 반환점을 지난 것으로 간주한다
@@ -405,7 +406,8 @@
 
     _sampleSurface() {
       this.surface = this.track.surfaceAt(this.x, this.y);
-      const p = this.track.project(this.x, this.y);
+      const p = this.track.project(this.x, this.y, this._hasNode ? this.node : undefined);
+      this._hasNode = true;
       this.node = p.index;
       this.lateral = p.lateral;
       this.offTrackDist = p.dist;

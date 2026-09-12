@@ -419,18 +419,13 @@
       g.fillStyle = 'rgba(255,255,255,.8)';
       for (let i = 0; i < 40; i++) g.fillRect(Math.random() * W, Math.random() * H, 1.4, 1.4);
     }
-    const c = def.ctrl, n = c.length, pts = [];
-    for (let i = 0; i < n; i++) {
-      const p0 = c[(i - 1 + n) % n], p1 = c[i], p2 = c[(i + 1) % n], p3 = c[(i + 2) % n];
-      for (let j = 0; j < 10; j++) {
-        const t = j / 10, t2 = t * t, t3 = t2 * t;
-        const f = (a, b, cc, d) => 0.5 * ((2 * b) + (-a + cc) * t + (2 * a - 5 * b + 4 * cc - d) * t2 + (-a + 3 * b - 3 * cc + d) * t3);
-        pts.push([f(p0[0], p1[0], p2[0], p3[0]), f(p0[1], p1[1], p2[1], p3[1])]);
-      }
-    }
-    // 2048 월드를 썸네일에 맞춰 정규화
-    const pad = 9, k = Math.min((W - pad * 2), (H - pad * 2)) / 2048;
-    const ox = (W - 2048 * k) / 2, oy = (H - 2048 * k) / 2;
+    const pts = global.TrackSystem.centerline(def);
+    // 실제 코스 경계에 맞춰 정규화
+    const pad = 9;
+    let minx = 1e9, maxx = -1e9, miny = 1e9, maxy = -1e9;
+    for (const p of pts) { minx = Math.min(minx, p[0]); maxx = Math.max(maxx, p[0]); miny = Math.min(miny, p[1]); maxy = Math.max(maxy, p[1]); }
+    const k = Math.min((W - pad * 2) / (maxx - minx), (H - pad * 2) / (maxy - miny));
+    const ox = (W - (maxx - minx) * k) / 2 - minx * k, oy = (H - (maxy - miny) * k) / 2 - miny * k;
     g.lineJoin = g.lineCap = 'round';
     g.beginPath();
     pts.forEach((p, i) => { const x = ox + p[0] * k, y = oy + p[1] * k; i ? g.lineTo(x, y) : g.moveTo(x, y); });

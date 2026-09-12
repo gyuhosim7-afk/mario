@@ -30,9 +30,9 @@
     follow(k, dt) {
       const boosting = k.boostTimer > 0 || k.state === 'BULLET';
       const sr = Math.max(0, Math.min(1.5, k.speedRatio));
-      const tDist = 104 + sr * 24 + (boosting ? 20 : 0);
+      const tDist = 122 + sr * 26 + (boosting ? 22 : 0);
       const tFov = 60 + sr * 9 + (boosting ? 12 : 0);
-      const tH = 37 + sr * 8 + k.z * 0.5;
+      const tH = 53 + sr * 10 + k.z * 0.5;
 
       let yaw = k.angle;
       if (k.drifting) yaw += k.driftDir * 0.24;
@@ -48,8 +48,8 @@
 
       const tx = k.x - Math.cos(this.yaw) * this.dist;
       const ty = k.y - Math.sin(this.yaw) * this.dist;
-      this.x += (tx - this.x) * Math.min(1, dt * 9);
-      this.y += (ty - this.y) * Math.min(1, dt * 9);
+      this.x += (tx - this.x) * Math.min(1, dt * 14);
+      this.y += (ty - this.y) * Math.min(1, dt * 14);
 
       this.shake = Math.max(this.shake, k.shake);
       this.shake = Math.max(0, this.shake - dt * 2.1);
@@ -62,7 +62,7 @@
       const la = this.lookAhead;
       this.cam.lookAt(
         k.x + Math.cos(k.angle) * la * 0.35 + sx,
-        13 + k.z * 0.85 + sy,
+        21 + k.z * 0.85 + sy,
         k.y + Math.sin(k.angle) * la * 0.35 + sz
       );
       if (Math.abs(this.cam.fov - this.fov) > 0.01) {
@@ -321,8 +321,8 @@
       /* --- 안개 / 배경색 --- */
       const fogCol = new T.Color(def.fog);
       sc.background = null;
-      if (theme === 'rainbow') sc.fog = new T.FogExp2(0x05030f, 0.00042);
-      else sc.fog = new T.Fog(fogCol, theme === 'bowser' ? 1100 : 1800, theme === 'bowser' ? 4200 : 6200);
+      if (theme === 'rainbow') sc.fog = new T.FogExp2(0x05030f, 0.00022);
+      else sc.fog = new T.Fog(fogCol, theme === 'bowser' ? 1700 : 3000, theme === 'bowser' ? 6800 : 12000);
 
       /* --- 조명 --- */
       if (this.lights) this.lights.forEach(l => sc.remove(l));
@@ -354,7 +354,7 @@
       /* --- 하늘 돔 --- */
       const skyTex = global.Tex.tex(global.Tex.skyDome(theme), 1, 1);
       const sky = new T.Mesh(
-        new T.SphereGeometry(4200, 40, 24),
+        new T.SphereGeometry(7000, 40, 24),
         new T.MeshBasicMaterial({ map: skyTex, side: T.BackSide, fog: false, toneMapped: false })
       );
       sky.renderOrder = -1;
@@ -363,22 +363,22 @@
 
       /* --- 지형 --- */
       if (theme === 'circuit') {
-        const gt = global.Tex.get('grass', global.Tex.grass, 90, 90);
+        const gt = global.Tex.get('grass', global.Tex.grass, 170, 170);
         const gm = new T.MeshStandardMaterial({ map: gt.color, normalMap: gt.normal, roughness: 1 });
-        const ground = new T.Mesh(new T.PlaneGeometry(7000, 7000), gm);
+        const ground = new T.Mesh(new T.PlaneGeometry(13000, 13000), gm);
         ground.rotation.x = -Math.PI / 2;
-        ground.position.set(1024, -0.6, 1024);
+        ground.position.set(2048, -0.6, 2048);
         ground.receiveShadow = true;
         g.add(ground);
       } else if (theme === 'bowser') {
-        const lt = global.Tex.get('lavaground', global.Tex.lavaField, 40, 40);
+        const lt = global.Tex.get('lavaground', global.Tex.lavaField, 75, 75);
         const lm = new T.MeshStandardMaterial({
           map: lt.color, emissive: new T.Color('#ff5a10'), emissiveMap: lt.emissive,
           emissiveIntensity: 1.15, roughness: 0.85
         });
-        const ground = new T.Mesh(new T.PlaneGeometry(7000, 7000), lm);
+        const ground = new T.Mesh(new T.PlaneGeometry(13000, 13000), lm);
         ground.rotation.x = -Math.PI / 2;
-        ground.position.set(1024, -2.2, 1024);
+        ground.position.set(2048, -2.2, 2048);
         g.add(ground);
         this.lavaMat = lm;
         this.lavaTex = lt;
@@ -470,8 +470,8 @@
         depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3
       });
       this.boostMat = bMat;
-      for (const t of def.boosts) {
-        const nd = track.nodeAtT(t);
+      for (const bi of track.boostSpots) {
+        const nd = track.nodes[bi];
         const pad = new T.Mesh(new T.PlaneGeometry(track.width * 0.66, 84), bMat);
         pad.rotation.x = -Math.PI / 2;
         pad.rotation.z = -Math.atan2(nd.dy, nd.dx) + Math.PI / 2;
@@ -498,7 +498,7 @@
         const tpl = global.Models.buildProp(type);
         const mats = byType[type].map(d => {
           const m = new T.Matrix4();
-          const rotY = Math.atan2(1024 - d.y, 1024 - d.x);
+          const rotY = Math.atan2(2048 - d.y, 2048 - d.x);
           m.compose(
             new T.Vector3(d.x, d.z || 0, d.y),
             new T.Quaternion().setFromEuler(new T.Euler(0, rotY + Math.random() * 0.6, 0)),
@@ -533,9 +533,9 @@
 
       /* --- 배경 랜드마크 --- */
       const lm = global.Models.buildLandmark(theme);
-      if (theme === 'rainbow') lm.position.set(-1400, 900, -900);
-      else if (theme === 'bowser') lm.position.set(1024, 30, -1500);
-      else lm.position.set(1024, 0, -1450);
+      if (theme === 'rainbow') lm.position.set(-1800, 1100, -1400);
+      else if (theme === 'bowser') lm.position.set(2048, 30, -2200);
+      else lm.position.set(2048, 0, -2100);
       lm.traverse(o => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
       g.add(lm);
       this.landmark = lm;

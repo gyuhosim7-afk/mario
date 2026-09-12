@@ -101,7 +101,7 @@
       if (cache[key]) return cache[key];
       const obj = global.Models.buildKart(combo);
       obj.traverse(o => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
-      const c = this._shoot(obj, size || 128, -2.35, 0.30, 1.1);
+      const c = this._shoot(obj, size || 128, -0.62, 0.30, 1.12);
       cache[key] = c;
       return c;
     },

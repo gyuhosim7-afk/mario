@@ -10,10 +10,11 @@
 
   const D = global.GameData;
   const S = D.SURFACE;
-  const WORLD = 2048;          // 월드 한 변 크기(= 텍스처 픽셀)
-  const SURF_RES = 1024;       // 서페이스 맵 해상도
-  const NODES = 900;           // 중심선 샘플 수
-  const GRID = 96;             // 최근접 노드 조회 그리드
+  const WORLD = 4096;          // 월드 한 변 크기
+  const SURF_RES = 2048;       // 서페이스 맵 해상도 (2 world unit / texel)
+  const NODE_GAP = 9;          // 중심선 노드 간격 (world unit)
+  const CTRL_GAP = 45;         // 레이아웃 트레이싱 간격
+  const GRID = 128;            // 최근접 노드 조회 시드 그리드
 
   const SURFACE_COLOR = {};
   SURFACE_COLOR[S.VOID] = 'rgb(0,0,0)';
@@ -44,17 +45,34 @@
       this.length = 0;
       this._buildCenterline();
       this._buildGrid();
+      this._placeFeatures();
       this._buildTextures();
       this._buildProps();
     }
 
-    /* ---------------- 중심선 ---------------- */
+    /* ---------------- 중심선 ----------------
+     * 트랙은 [직선 / 코너] 시퀀스로 정의된다.
+     *   ['s', 길이]            직선
+     *   ['r'|'l', 반경, 각도]  우/좌 코너
+     * 1) 순회전이 정확히 360°가 되도록 코너 각도를 정규화
+     * 2) 직선 길이를 가중 최소자승으로 조정해 폐곡선을 정확히 닫음
+     *    (헤딩 고정 시 폐합 오차는 직선 길이에 대해 선형이라 해석적으로 풀린다)
+     * 3) 균일 간격으로 트레이싱 -> Catmull-Rom 으로 노드 생성
+     * ---------------------------------------------------------------- */
     _buildCenterline() {
-      const c = this.def.ctrl, n = c.length;
-      const per = Math.max(2, Math.round(NODES / n));
+      const def = this.def;
+      const el = normalizeTurns(def.layout);
+      const lens = solveClosure(el, def.heading || 0);
+      const ctrl = traceLayout(el, lens, def.heading || 0, CTRL_GAP);
+      centerInWorld(ctrl, WORLD);
+      this.ctrl = ctrl;
+
+      // Catmull-Rom 세분화
+      const n = ctrl.length;
+      const per = Math.max(2, Math.round(CTRL_GAP / NODE_GAP));
       const pts = [];
       for (let i = 0; i < n; i++) {
-        const p0 = c[(i - 1 + n) % n], p1 = c[i], p2 = c[(i + 1) % n], p3 = c[(i + 2) % n];
+        const p0 = ctrl[(i - 1 + n) % n], p1 = ctrl[i], p2 = ctrl[(i + 1) % n], p3 = ctrl[(i + 2) % n];
         for (let j = 0; j < per; j++) {
           const t = j / per;
           pts.push([catmull(p0[0], p1[0], p2[0], p3[0], t),
@@ -68,33 +86,40 @@
         const d = Math.hypot(dx, dy) || 1e-6;
         this.nodes.push({
           x: a[0], y: a[1],
-          dx: dx / d, dy: dy / d,       // 진행 방향
-          nx: -dy / d, ny: dx / d,      // 좌측 법선
+          dx: dx / d, dy: dy / d,
+          nx: -dy / d, ny: dx / d,
           s: len, seg: d, curv: 0
         });
         len += d;
       }
       this.length = len;
-      // 곡률 계산 (AI 감속 / 카메라 연출용)
+      // 곡률 (AI 감속 / 연출용)
       const N = this.nodes.length;
+      const w = Math.max(4, Math.round(60 / NODE_GAP));
       for (let i = 0; i < N; i++) {
-        const a = this.nodes[(i - 6 + N) % N], b = this.nodes[(i + 6) % N];
+        const a = this.nodes[(i - w + N) % N], b = this.nodes[(i + w) % N];
         let d = Math.atan2(b.dy, b.dx) - Math.atan2(a.dy, a.dx);
         while (d > Math.PI) d -= Math.PI * 2;
         while (d < -Math.PI) d += Math.PI * 2;
         this.nodes[i].curv = d;
+        // 곡률 반경(world unit) — 레이아웃/노드간격과 무관한 절대 지표
+        const arc = 2 * w * NODE_GAP;
+        this.nodes[i].radius = Math.abs(d) > 1e-4 ? arc / Math.abs(d) : 1e6;
       }
+      this.nodeGap = NODE_GAP;
     }
 
-    /* --------- 최근접 노드 조회 그리드 --------- */
+    /* --------- 최근접 노드 조회 --------- */
     _buildGrid() {
       const g = new Uint16Array(GRID * GRID);
       const cell = WORLD / GRID;
+      const N = this.nodes.length;
+      const step = Math.max(1, Math.round(N / 700));
       for (let gy = 0; gy < GRID; gy++) {
         for (let gx = 0; gx < GRID; gx++) {
           const px = (gx + 0.5) * cell, py = (gy + 0.5) * cell;
           let best = 0, bd = Infinity;
-          for (let i = 0; i < this.nodes.length; i += 2) {
+          for (let i = 0; i < N; i += step) {
             const nd = this.nodes[i];
             const d = (nd.x - px) * (nd.x - px) + (nd.y - py) * (nd.y - py);
             if (d < bd) { bd = d; best = i; }
@@ -106,18 +131,37 @@
       this._cell = cell;
     }
 
-    /** 월드 좌표 -> { node, index, lateral, progress } */
-    project(x, y) {
-      const gx = Math.max(0, Math.min(GRID - 1, (x / this._cell) | 0));
-      const gy = Math.max(0, Math.min(GRID - 1, (y / this._cell) | 0));
-      const seed = this._grid[gy * GRID + gx];
+    /**
+     * 월드 좌표 -> { index, node, lateral, progress, dist }
+     * hint(직전 프레임 노드)를 주면 그 주변만 탐색한다. 코스가 접히는 구간에서
+     * 다른 구간의 노드로 잘못 매칭되는 것을 막는다.
+     */
+    project(x, y, hint) {
       const N = this.nodes.length;
+      let seed, span;
+      if (hint === undefined || hint === null) {
+        const gx = Math.max(0, Math.min(GRID - 1, (x / this._cell) | 0));
+        const gy = Math.max(0, Math.min(GRID - 1, (y / this._cell) | 0));
+        seed = this._grid[gy * GRID + gx];
+        span = Math.max(24, Math.round(this._cell * 2 / NODE_GAP) + 12);
+      } else {
+        seed = hint;
+        span = 64;
+      }
       let best = seed, bd = Infinity;
-      for (let k = -14; k <= 14; k++) {
+      for (let k = -span; k <= span; k++) {
         const i = (seed + k + N) % N;
         const nd = this.nodes[i];
         const d = (nd.x - x) * (nd.x - x) + (nd.y - y) * (nd.y - y);
         if (d < bd) { bd = d; best = i; }
+      }
+      // 너무 멀면(텔레포트/리스폰 직후) 전체 재탐색
+      if (bd > 640 * 640) {
+        for (let i = 0; i < N; i += 3) {
+          const nd = this.nodes[i];
+          const d = (nd.x - x) * (nd.x - x) + (nd.y - y) * (nd.y - y);
+          if (d < bd) { bd = d; best = i; }
+        }
       }
       const nd = this.nodes[best];
       const lateral = (x - nd.x) * nd.nx + (y - nd.y) * nd.ny;
@@ -126,6 +170,47 @@
 
     nodeAt(i) { return this.nodes[((i % this.nodes.length) + this.nodes.length) % this.nodes.length]; }
     nodeAtT(t) { return this.nodes[Math.floor(((t % 1) + 1) % 1 * this.nodes.length)]; }
+
+    /* ------- 코스 특징 자동 배치 -------
+     * 곡률이 낮은(= 직선인) 구간을 찾아 부스터 발판과 아이템 박스 줄을 놓는다.
+     * 레이아웃을 바꿔도 배치가 알아서 따라온다.
+     * ----------------------------------- */
+    _placeFeatures() {
+      const N = this.nodes.length;
+      const win = Math.round(90 / NODE_GAP);
+      const score = new Float32Array(N);          // 낮을수록 직선
+      for (let i = 0; i < N; i++) {
+        let a = 0;
+        for (let k = -win; k <= win; k++) a += Math.abs(this.nodes[(i + k + N) % N].curv);
+        score[i] = a;
+      }
+      const pickSpread = (count, minSepFrac, avoidStart) => {
+        const order = Array.from({ length: N }, (_, i) => i).sort((a, b) => score[a] - score[b]);
+        const sep = N * minSepFrac, out = [];
+        for (const i of order) {
+          if (out.length >= count) break;
+          if (avoidStart && Math.min(i, N - i) < N * 0.06) continue;
+          if (out.every(j => { const d = Math.abs(i - j); return Math.min(d, N - d) > sep; })) out.push(i);
+        }
+        return out.sort((a, b) => a - b);
+      };
+      this.boostSpots = pickSpread(this.def.boostCount || 3, 0.16, true);
+      // 아이템 박스: 균등 t 위치를 근처 직선 구간으로 스냅
+      const rows = this.def.boxRows || 4;
+      this.boxSpots = [];
+      for (let r = 0; r < rows; r++) {
+        const base = Math.round(((r + 0.5) / rows) * N);
+        let best = base, bs = Infinity;
+        const rng = Math.round(N * 0.05);
+        for (let k = -rng; k <= rng; k++) {
+          const i = (base + k + N) % N;
+          if (this.boostSpots.some(b => { const d = Math.abs(i - b); return Math.min(d, N - d) < N * 0.03; })) continue;
+          if (score[i] < bs) { bs = score[i]; best = i; }
+        }
+        this.boxSpots.push(best);
+      }
+      this._straightScore = score;
+    }
 
     /* ---------------- 서페이스 맵 (물리 노면 판정) ----------------
      * 3D 메시와 동일한 스플라인/폭으로 평면에 ID 색을 칠한 뒤 읽어들인다.
@@ -166,8 +251,8 @@
       this._path(ctx, k); ctx.stroke();
 
       // 부스터 발판
-      for (const t of def.boosts) {
-        const nd = this.nodeAtT(t);
+      for (const bi of this.boostSpots) {
+        const nd = this.nodes[bi];
         ctx.save();
         ctx.translate(nd.x * k, nd.y * k);
         ctx.rotate(Math.atan2(nd.dy, nd.dx));
@@ -200,47 +285,57 @@
     /* ---------------- 오브젝트 ---------------- */
     _buildProps() {
       const N = this.nodes.length;
-      // 아이템 박스: 트랙을 따라 5줄
-      this.itemBoxRows = [];
-      const rows = [0.20, 0.52, 0.82];
-      for (const t of rows) {
-        const nd = this.nodeAtT(t);
-        const row = [];
+      const lenK = this.length / 9000;            // 트랙 길이 비례 계수
+
+      // 아이템 박스: 직선 구간에 5개씩 가로로
+      this.itemBoxes = [];
+      for (const bi of this.boxSpots) {
+        const nd = this.nodes[bi];
         for (let i = -2; i <= 2; i++) {
           const off = i * (this.width * 0.19);
-          row.push({ x: nd.x + nd.nx * off, y: nd.y + nd.ny * off, t });
+          this.itemBoxes.push({ x: nd.x + nd.nx * off, y: nd.y + nd.ny * off, respawn: 0 });
         }
-        this.itemBoxRows.push(row);
       }
-      this.itemBoxes = this.itemBoxRows.flat().map(b => ({ x: b.x, y: b.y, respawn: 0 }));
+      this.boosts = this.boostSpots.map(i => i / N);
 
-      // 장식물(빌보드)
+      // 장식물(3D 프롭)
       this.decor = [];
       const push = (t, side, type, scale, minOff, z) => {
         const nd = this.nodeAtT(t);
         const off = (this.width * 0.5 + (minOff || 120) + Math.random() * 240) * side;
         this.decor.push({ x: nd.x + nd.nx * off, y: nd.y + nd.ny * off, type, scale: scale || 1, z: z || 0 });
       };
+      const rnd = () => Math.random();
+      const n = (base) => Math.round(base * lenK);
       if (this.theme === 'circuit') {
-        for (let i = 0; i < 46; i++) push(Math.random(), Math.random() < 0.5 ? 1 : -1, Math.random() < 0.45 ? 'piranha' : 'tree', 0.8 + Math.random() * 0.5);
-        for (let i = 0; i < 24; i++) push(Math.random(), Math.random() < 0.5 ? 1 : -1, 'crowd', 1, 120);
-        for (let i = 0; i < 14; i++) push(Math.random(), Math.random() < 0.5 ? 1 : -1, 'sign', 0.9);
+        for (let i = 0; i < n(40); i++) push(rnd(), rnd() < 0.5 ? 1 : -1, rnd() < 0.45 ? 'piranha' : 'tree', 0.8 + rnd() * 0.5);
+        for (let i = 0; i < n(22); i++) push(rnd(), rnd() < 0.5 ? 1 : -1, 'crowd', 1, 120);
+        for (let i = 0; i < n(12); i++) push(rnd(), rnd() < 0.5 ? 1 : -1, 'sign', 0.9);
       } else if (this.theme === 'bowser') {
-        for (let i = 0; i < 30; i++) push(Math.random(), Math.random() < 0.5 ? 1 : -1, 'pillar', 0.9 + Math.random() * 0.6);
-        for (let i = 0; i < 18; i++) push(Math.random(), Math.random() < 0.5 ? 1 : -1, 'lavafall', 1.2, 230);
-        for (let i = 0; i < 10; i++) push(Math.random(), Math.random() < 0.5 ? 1 : -1, 'statue', 1.1);
+        for (let i = 0; i < n(28); i++) push(rnd(), rnd() < 0.5 ? 1 : -1, 'pillar', 0.9 + rnd() * 0.6);
+        for (let i = 0; i < n(16); i++) push(rnd(), rnd() < 0.5 ? 1 : -1, 'lavafall', 1.2, 230);
+        for (let i = 0; i < n(10); i++) push(rnd(), rnd() < 0.5 ? 1 : -1, 'statue', 1.1);
       } else {
-        // 소행성은 트랙에서 멀리 떨어뜨려 허공에 띄운다
-        for (let i = 0; i < 30; i++) push(Math.random(), Math.random() < 0.5 ? 1 : -1, 'staroid',
-          0.7 + Math.random() * 0.8, 150 + Math.random() * 260, 40 + Math.random() * 200);
+        for (let i = 0; i < n(30); i++) push(rnd(), rnd() < 0.5 ? 1 : -1, 'staroid',
+          0.7 + rnd() * 0.8, 150 + rnd() * 260, 40 + rnd() * 200);
       }
 
-      // 쿠파 성 쿵쿵이(Thwomp)
+      // 쿠파 성 쿵쿵이: 직선 구간 위주로
       this.thwomps = [];
       if (this.def.hazard === 'thwomp') {
-        [0.14, 0.38, 0.62, 0.86].forEach((t, i) => {
-          const nd = this.nodeAtT(t);
-          const off = (i % 3 - 1) * this.width * 0.26;
+        const spots = [];
+        for (let r = 0; r < 5; r++) {
+          const base = Math.round(((r + 0.35) / 5) * N);
+          let best = base, bs = Infinity;
+          for (let k = -Math.round(N * 0.04); k <= Math.round(N * 0.04); k++) {
+            const i = (base + k + N) % N;
+            if (this._straightScore[i] < bs) { bs = this._straightScore[i]; best = i; }
+          }
+          spots.push(best);
+        }
+        spots.forEach((i, k) => {
+          const nd = this.nodes[i];
+          const off = (k % 3 - 1) * this.width * 0.26;
           this.thwomps.push({
             x: nd.x + nd.nx * off, y: nd.y + nd.ny * off,
             phase: Math.random() * 3, h: 120, state: 'up', timer: 0, shake: 0
@@ -248,10 +343,10 @@
         });
       }
 
-      // 스타트 그리드 위치
+      // 스타트 그리드
       this.startSlots = [];
       for (let i = 0; i < 8; i++) {
-        const back = 70 + Math.floor(i / 2) * 62;
+        const back = 90 + Math.floor(i / 2) * 78;
         const side = (i % 2 ? 1 : -1) * this.width * 0.22;
         const nd = this.projectAlong(-back);
         this.startSlots.push({ x: nd.x + nd.nx * side, y: nd.y + nd.ny * side, angle: Math.atan2(nd.dy, nd.dx) });
@@ -278,6 +373,109 @@
     }
   }
 
+  /* =============================================================
+   * 레이아웃 빌더
+   * ============================================================= */
+  function normalizeTurns(layout) {
+    let net = 0;
+    for (const e of layout) if (e[0] !== 's') net += e[2] * (e[0] === 'r' ? 1 : -1);
+    const k = net !== 0 ? 360 / net : 1;
+    return layout.map(e => e[0] === 's' ? { t: 's', len: e[1] } :
+      { t: 'a', r: e[1], deg: e[2] * k, dir: e[0] });
+  }
+
+  function walkLayout(el, lens, heading) {
+    let x = 0, y = 0, h = heading * Math.PI / 180, si = 0;
+    const headings = [];
+    for (const e of el) {
+      if (e.t === 's') {
+        const L = lens ? lens[si] : e.len;
+        headings.push(h);
+        x += Math.cos(h) * L; y += Math.sin(h) * L;
+        si++;
+      } else {
+        const rad = e.deg * Math.PI / 180 * (e.dir === 'r' ? 1 : -1);
+        const sg = Math.sign(rad) || 1;
+        const cx = x - Math.sin(h) * e.r * sg, cy = y + Math.cos(h) * e.r * sg;
+        const a0 = Math.atan2(y - cy, x - cx) + rad;
+        x = cx + Math.cos(a0) * e.r; y = cy + Math.sin(a0) * e.r;
+        h += rad;
+      }
+    }
+    return { x, y, h, headings };
+  }
+
+  /** 직선 길이를 조정해 폐합 (가중 최소노름해를 반복 적용) */
+  function solveClosure(el, heading) {
+    const lens = el.filter(e => e.t === 's').map(e => e.len);
+    for (let iter = 0; iter < 40; iter++) {
+      const w = walkLayout(el, lens, heading);
+      if (Math.hypot(w.x, w.y) < 0.01) break;
+      const c = w.headings.map(Math.cos), s2 = w.headings.map(Math.sin);
+      const wt = lens.map(L => Math.max(40, L));
+      let a11 = 0, a12 = 0, a22 = 0;
+      for (let i = 0; i < lens.length; i++) {
+        a11 += wt[i] * c[i] * c[i]; a12 += wt[i] * c[i] * s2[i]; a22 += wt[i] * s2[i] * s2[i];
+      }
+      const det = a11 * a22 - a12 * a12;
+      if (Math.abs(det) < 1e-9) break;
+      const b1 = -w.x, b2 = -w.y;
+      const l1 = (a22 * b1 - a12 * b2) / det, l2 = (-a12 * b1 + a11 * b2) / det;
+      for (let i = 0; i < lens.length; i++) lens[i] = Math.max(60, lens[i] + wt[i] * (c[i] * l1 + s2[i] * l2));
+    }
+    return lens;
+  }
+
+  /** 균일 간격 트레이싱 (스플라인 오버슈트 방지) */
+  function traceLayout(el, lens, heading, gap) {
+    const pts = [];
+    let x = 0, y = 0, h = heading * Math.PI / 180, si = 0;
+    pts.push([x, y]);
+    for (const e of el) {
+      if (e.t === 's') {
+        const L = lens[si++];
+        const n = Math.max(1, Math.round(L / gap));
+        for (let i = 0; i < n; i++) { x += Math.cos(h) * (L / n); y += Math.sin(h) * (L / n); pts.push([x, y]); }
+      } else {
+        const rad = e.deg * Math.PI / 180 * (e.dir === 'r' ? 1 : -1);
+        const n = Math.max(3, Math.round(e.r * Math.abs(rad) / gap));
+        const sg = Math.sign(rad) || 1;
+        for (let i = 0; i < n; i++) {
+          const cx = x - Math.sin(h) * e.r * sg, cy = y + Math.cos(h) * e.r * sg;
+          const a1 = Math.atan2(y - cy, x - cx) + rad / n;
+          x = cx + Math.cos(a1) * e.r; y = cy + Math.sin(a1) * e.r;
+          h += rad / n;
+          pts.push([x, y]);
+        }
+      }
+    }
+    pts.pop();
+    return pts;
+  }
+
+  function centerInWorld(pts, world) {
+    let minx = 1e9, maxx = -1e9, miny = 1e9, maxy = -1e9;
+    for (const p of pts) {
+      minx = Math.min(minx, p[0]); maxx = Math.max(maxx, p[0]);
+      miny = Math.min(miny, p[1]); maxy = Math.max(maxy, p[1]);
+    }
+    const ox = (world - (maxx - minx)) / 2 - minx, oy = (world - (maxy - miny)) / 2 - miny;
+    for (const p of pts) { p[0] += ox; p[1] += oy; }
+    return pts;
+  }
+
+  /** 텍스처 없이 중심선만 필요할 때 (로비 썸네일용) */
+  const clCache = {};
+  function centerline(def) {
+    if (!clCache[def.id]) {
+      const el = normalizeTurns(def.layout);
+      const lens = solveClosure(el, def.heading || 0);
+      const pts = traceLayout(el, lens, def.heading || 0, CTRL_GAP * 2);
+      clCache[def.id] = centerInWorld(pts, WORLD);
+    }
+    return clCache[def.id];
+  }
+
   const cache = {};
   function get(id) {
     if (!cache[id]) {
@@ -287,5 +485,5 @@
     return cache[id];
   }
 
-  global.TrackSystem = { Track, get, WORLD };
+  global.TrackSystem = { Track, get, centerline, WORLD };
 })(window);

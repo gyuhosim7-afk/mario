@@ -116,11 +116,11 @@
     // 팔 (핸들을 쥔 자세)
     const armMat = ch.id === 'dk' || ch.id === 'bowser' ? skin : cloth;
     [-1, 1].forEach(side => {
-      const arm = capsule(2.1 * S, 6.4 * S, armMat, 3.4 * S, 8.4 * S, side * 5.4 * S);
-      arm.rotation.z = -0.95;
+      const arm = capsule(2.1 * S, 6.4 * S, armMat, 3.8 * S, 7.6 * S, side * 5.2 * S);
+      arm.rotation.z = -1.12;
       arm.rotation.x = side * 0.25;
       g.add(arm);
-      const glove = sphere(2.5 * S, ch.id === 'bowser' || ch.id === 'dk' ? skin : white, 7.6 * S, 10.2 * S, side * 4.2 * S, 12);
+      const glove = sphere(2.5 * S, ch.id === 'bowser' || ch.id === 'dk' ? skin : white, 8.4 * S, 8.6 * S, side * 4.0 * S, 12);
       g.add(glove);
     });
 
@@ -132,7 +132,8 @@
     g.add(head);
     g.userData.head = head;
 
-    // 눈
+    // 눈 + 눈썹
+    const brow = mat(ch.id === 'bowser' ? '#7a4a1a' : (ch.id === 'peach' ? '#c9a24a' : '#4a2c17'), { rough: 0.9 });
     [-1, 1].forEach(side => {
       const eye = sphere(1.55 * S, white, headR * 0.72, headY + headR * 0.16, side * headR * 0.42, 12);
       eye.scale.set(0.7, 1.15, 1);
@@ -140,7 +141,26 @@
       const pupil = sphere(0.72 * S, black, headR * 0.98, headY + headR * 0.16, side * headR * 0.44, 8);
       pupil.scale.set(0.6, 1.1, 1);
       g.add(pupil);
+      // 살짝 찌푸린 눈썹 (레이싱 표정)
+      const b = box(0.6 * S, 0.7 * S, 3.0 * S, brow,
+        headR * 0.92, headY + headR * 0.62, side * headR * 0.44);
+      b.rotation.x = side * 0.28;
+      g.add(b);
     });
+    // 입
+    if (ch.id !== 'bowser' && ch.id !== 'yoshi') {
+      const mouth = sphere(1.5 * S, mat('#8a3a30', { rough: 0.8 }), headR * 0.9, headY - headR * 0.52, 0, 10);
+      mouth.scale.set(0.45, 0.5, 1.5);
+      g.add(mouth);
+    }
+    // 볼 (경량급 캐릭터에 생기 부여)
+    if (light) {
+      [-1, 1].forEach(side => {
+        const cheek = sphere(1.5 * S, mat('#f4a6a0', { rough: 0.9 }), headR * 0.82, headY - headR * 0.24, side * headR * 0.62, 8);
+        cheek.scale.set(0.4, 0.8, 1);
+        g.add(cheek);
+      });
+    }
 
     /* --- 캐릭터별 특징 --- */
     if (ch.id === 'bowser') {
@@ -293,9 +313,14 @@
     const wr = wh.id === 'monster' ? 9.6 : (wh.id === 'roller' ? 6.2 : 7.8);
     const ww = wh.id === 'monster' ? 6.5 : (wh.id === 'slick' ? 6 : 4.6);
 
+    // 스탠다드 프레임은 캐릭터 시그니처 컬러를 입는다
+    const bodyColor = fr.id === 'standard' ? ch.colors.accent : fr.body;
     const bodyMat = new T.MeshPhysicalMaterial({
-      color: new T.Color(fr.body), roughness: 0.28, metalness: 0.35,
-      clearcoat: 0.85, clearcoatRoughness: 0.12
+      color: new T.Color(bodyColor), roughness: 0.24, metalness: 0.4,
+      clearcoat: 0.95, clearcoatRoughness: 0.08
+    });
+    const accentMat = new T.MeshPhysicalMaterial({
+      color: new T.Color(ch.colors.trim || '#f4d03f'), roughness: 0.3, metalness: 0.5, clearcoat: 0.6
     });
     const darkMat = mat('#25252c', { rough: 0.5, metal: 0.3 });
     const chromeMat = mat('#cfd4dc', { rough: 0.16, metal: 0.95 });
@@ -320,10 +345,27 @@
     nose.scale.set(1, 1, 0.72);
     g.add(nose);
 
-    // 프론트 범퍼
+    // 프론트 범퍼 + 스플리터 + 헤드라이트
     const bumper = rounded(5, W * 0.86, 4.5, 2, darkMat);
     bumper.position.set(L * 0.44, wr - 1.2, 0);
     g.add(bumper);
+    const splitter = rounded(9, W * 1.02, 1.6, 1.2, darkMat);
+    splitter.position.set(L * 0.5, wr - 3.4, 0);
+    g.add(splitter);
+    const lampMat = mat('#fff6d8', { emissive: '#ffe9a0', emissiveIntensity: 0.9, rough: 0.2 });
+    [-1, 1].forEach(side => {
+      const lamp = sphere(2.3, lampMat, L * 0.46, wr + 3.2, side * W * 0.26, 10);
+      lamp.scale.set(0.6, 0.8, 1);
+      lamp.castShadow = false;
+      g.add(lamp);
+    });
+    // 사이드 스트라이프
+    [-1, 1].forEach(side => {
+      const stripe = rounded(L * 0.5, 3.2, 1.2, 1, accentMat);
+      stripe.position.set(-L * 0.02, wr + 3.0, side * (W * 0.52 + 0.6));
+      stripe.rotation.x = Math.PI / 2;
+      g.add(stripe);
+    });
 
     // 시트
     const seat = rounded(13, W * 0.5, 3, 2, darkMat);
@@ -335,7 +377,7 @@
     g.add(seatBack);
 
     // 스티어링 휠
-    const steer = torus(4.4, 0.9, darkMat, L * 0.18, wr + 11.5, 0);
+    const steer = torus(3.5, 0.75, darkMat, L * 0.21, wr + 10.2, 0);
     steer.rotation.y = Math.PI / 2;
     steer.rotation.z = 0.55;
     g.add(steer);
@@ -390,9 +432,17 @@
       return gg;
     });
     const hubGeo = geo('hub' + wr, () => {
-      const gg = new T.CylinderGeometry(wr * 0.2, wr * 0.2, ww * 1.3, 10);
-      gg.rotateX(Math.PI / 2);
-      return gg;
+      const parts = [];
+      const hub = new T.CylinderGeometry(wr * 0.2, wr * 0.2, ww * 1.3, 10);
+      hub.rotateX(Math.PI / 2);
+      parts.push(hub.toNonIndexed());
+      for (let i = 0; i < 5; i++) {                 // 스포크
+        const sp = new T.BoxGeometry(wr * 0.9, wr * 0.16, ww * 0.5);
+        sp.rotateZ(i / 5 * Math.PI);
+        parts.push(sp.toNonIndexed());
+      }
+      parts.forEach(g2 => { if (!g2.attributes.uv) g2.setAttribute('uv', new T.BufferAttribute(new Float32Array(g2.attributes.position.count * 2), 2)); });
+      try { return T.BufferGeometryUtils.mergeGeometries(parts, false) || hub; } catch (e) { return hub; }
     });
     [[L * 0.34, 1, true], [L * 0.34, -1, true], [-L * 0.34, 1, false], [-L * 0.34, -1, false]]
       .forEach(w => {
@@ -415,7 +465,7 @@
 
     /* 드라이버 */
     const driver = buildCharacter(ch);
-    driver.position.set(-L * 0.10, wr + 3.6, 0);
+    driver.position.set(-L * 0.09, wr + 6.2, 0);
     g.add(driver);
     g.userData.driver = driver;
 
