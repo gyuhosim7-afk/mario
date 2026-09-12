@@ -127,27 +127,58 @@
     nodeAt(i) { return this.nodes[((i % this.nodes.length) + this.nodes.length) % this.nodes.length]; }
     nodeAtT(t) { return this.nodes[Math.floor(((t % 1) + 1) % 1 * this.nodes.length)]; }
 
-    /* ---------------- 텍스처 ---------------- */
+    /* ---------------- 서페이스 맵 (물리 노면 판정) ----------------
+     * 3D 메시와 동일한 스플라인/폭으로 평면에 ID 색을 칠한 뒤 읽어들인다.
+     * 보이는 도로와 물리 판정이 항상 일치한다.
+     * ------------------------------------------------------------- */
     _buildTextures() {
-      // 비주얼
-      const vc = document.createElement('canvas');
-      vc.width = vc.height = WORLD;
-      const vx = vc.getContext('2d');
-      this._paint(vx, 1, false);
-      this.canvas = vc;
-      this.pixels = new Uint32Array(vx.getImageData(0, 0, WORLD, WORLD).data.buffer.slice(0));
-
-      // 서페이스
+      const k = SURF_RES / WORLD;
       const sc = document.createElement('canvas');
       sc.width = sc.height = SURF_RES;
-      const sx = sc.getContext('2d');
-      sx.imageSmoothingEnabled = false;
-      this._paint(sx, SURF_RES / WORLD, true);
-      const sd = sx.getImageData(0, 0, SURF_RES, SURF_RES).data;
-      const map = new Uint8Array(SURF_RES * SURF_RES);
-      for (let i = 0, p = 0; i < map.length; i++, p += 4) {
-        map[i] = Math.round(sd[p] / 40);
+      const ctx = sc.getContext('2d', { willReadFrequently: true });
+      ctx.imageSmoothingEnabled = false;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+
+      const def = this.def;
+      const roadW = this.width * k, kerbW = 13 * k;
+      const shoulder = (def.shoulder || 0) * k;
+
+      // 배경(오프로드 / 용암 / 허공)
+      ctx.fillStyle = SURFACE_COLOR[def.voidOffroad ? S.VOID : (def.lavaOffroad ? S.LAVA : S.OFFROAD)];
+      ctx.fillRect(0, 0, SURF_RES, SURF_RES);
+
+      // 갓길
+      if (shoulder > 0) {
+        ctx.strokeStyle = SURFACE_COLOR[S.OFFROAD];
+        ctx.lineWidth = roadW + (this.theme === 'rainbow' ? 0 : kerbW * 2) + shoulder * 2;
+        this._path(ctx, k); ctx.stroke();
       }
+      // 커브 둔턱
+      if (this.theme !== 'rainbow') {
+        ctx.strokeStyle = SURFACE_COLOR[S.KERB];
+        ctx.lineWidth = roadW + kerbW * 2;
+        this._path(ctx, k); ctx.stroke();
+      }
+      // 노면
+      ctx.strokeStyle = SURFACE_COLOR[S.ROAD];
+      ctx.lineWidth = roadW;
+      this._path(ctx, k); ctx.stroke();
+
+      // 부스터 발판
+      for (const t of def.boosts) {
+        const nd = this.nodeAtT(t);
+        ctx.save();
+        ctx.translate(nd.x * k, nd.y * k);
+        ctx.rotate(Math.atan2(nd.dy, nd.dx));
+        ctx.fillStyle = SURFACE_COLOR[S.BOOST];
+        ctx.fillRect(-42 * k, -roadW * 0.33, 84 * k, roadW * 0.66);
+        ctx.restore();
+      }
+
+      const sd = ctx.getImageData(0, 0, SURF_RES, SURF_RES).data;
+      const map = new Uint8Array(SURF_RES * SURF_RES);
+      for (let i = 0, p = 0; i < map.length; i++, p += 4) map[i] = Math.round(sd[p] / 40);
       this.surface = map;
       this.surfRes = SURF_RES;
     }
@@ -164,271 +195,6 @@
       ctx.moveTo(n[0].x * k, n[0].y * k);
       for (let i = 1; i < n.length; i++) ctx.lineTo(n[i].x * k, n[i].y * k);
       ctx.closePath();
-    }
-
-    _paint(ctx, k, surfaceMode) {
-      const def = this.def, W = WORLD * k;
-      const roadW = this.width * k, kerbW = 13 * k;
-      ctx.save();
-      ctx.lineJoin = 'round';
-      ctx.lineCap = 'round';
-
-      /* ---- 배경(오프로드) ---- */
-      if (surfaceMode) {
-        ctx.fillStyle = SURFACE_COLOR[def.voidOffroad ? S.VOID : (def.lavaOffroad ? S.LAVA : S.OFFROAD)];
-        ctx.fillRect(0, 0, W, W);
-      } else {
-        this._paintBackground(ctx, k, W);
-      }
-
-      /* ---- 갓길(Shoulder): 코스 이탈 시 즉사 대신 감속 ---- */
-      const shoulder = (def.shoulder || 0) * k;
-      if (shoulder > 0) {
-        if (surfaceMode) {
-          ctx.strokeStyle = SURFACE_COLOR[S.OFFROAD];
-          ctx.lineWidth = roadW + kerbW * 2 + shoulder * 2;
-          this._path(ctx, k); ctx.stroke();
-        } else if (this.theme === 'bowser') {
-          ctx.save();
-          ctx.shadowColor = '#ff6a1e'; ctx.shadowBlur = 20 * k;
-          ctx.strokeStyle = '#2a231f';
-          ctx.lineWidth = roadW + kerbW * 2 + shoulder * 2;
-          this._path(ctx, k); ctx.stroke();
-          ctx.restore();
-          ctx.strokeStyle = 'rgba(90,78,68,0.55)';
-          ctx.lineWidth = roadW + kerbW * 2 + shoulder;
-          this._path(ctx, k); ctx.stroke();
-        } else {
-          ctx.save();
-          ctx.shadowColor = '#7ef9ff'; ctx.shadowBlur = 18 * k;
-          ctx.strokeStyle = 'rgba(46,38,86,0.95)';
-          ctx.lineWidth = roadW + shoulder * 2;
-          this._path(ctx, k); ctx.stroke();
-          ctx.restore();
-        }
-      }
-
-      /* ---- 커브 둔턱(Kerb) ---- */
-      if (this.theme !== 'rainbow') {
-        if (surfaceMode) {
-          ctx.strokeStyle = SURFACE_COLOR[S.KERB];
-          ctx.lineWidth = roadW + kerbW * 2;
-          this._path(ctx, k); ctx.stroke();
-        } else {
-          const base = this.theme === 'bowser' ? '#d8cfc4' : '#ffffff';
-          const alt = this.theme === 'bowser' ? '#2b2320' : '#e02a2a';
-          ctx.strokeStyle = base;
-          ctx.lineWidth = roadW + kerbW * 2;
-          this._path(ctx, k); ctx.stroke();
-          // 둥근 캡은 굵은 선에서 점선 간격을 메워버리므로 butt 캡으로 그린다
-          ctx.save();
-          ctx.lineCap = 'butt';
-          ctx.setLineDash([34 * k, 34 * k]);
-          ctx.strokeStyle = alt;
-          ctx.lineWidth = roadW + kerbW * 2;
-          this._path(ctx, k); ctx.stroke();
-          ctx.restore();
-        }
-      } else if (!surfaceMode) {
-        // 무지개 로드: 펜스 없는 네온 발광 가장자리
-        ctx.save();
-        ctx.shadowColor = '#7ef9ff';
-        ctx.shadowBlur = 26 * k;
-        ctx.strokeStyle = 'rgba(150,240,255,0.85)';
-        ctx.lineWidth = roadW + 9 * k;
-        this._path(ctx, k); ctx.stroke();
-        ctx.restore();
-      }
-
-      /* ---- 노면 ---- */
-      if (surfaceMode) {
-        ctx.strokeStyle = SURFACE_COLOR[S.ROAD];
-        ctx.lineWidth = roadW;
-        this._path(ctx, k); ctx.stroke();
-      } else {
-        this._paintRoad(ctx, k, roadW);
-      }
-
-      /* ---- 부스터 발판 ---- */
-      for (const t of def.boosts) this._paintBoost(ctx, k, t, roadW, surfaceMode);
-
-      /* ---- 스타트/피니시 라인 ---- */
-      this._paintStartLine(ctx, k, roadW, surfaceMode);
-
-      ctx.restore();
-    }
-
-    _paintBackground(ctx, k, W) {
-      const th = this.theme;
-      if (th === 'circuit') {
-        const g = ctx.createLinearGradient(0, 0, 0, W);
-        g.addColorStop(0, '#4f9e3a'); g.addColorStop(1, '#3d8330');
-        ctx.fillStyle = g; ctx.fillRect(0, 0, W, W);
-        // 입체적인 풀잎
-        for (let i = 0; i < 26000; i++) {
-          const x = Math.random() * W, y = Math.random() * W;
-          const l = (2 + Math.random() * 4) * k;
-          ctx.strokeStyle = Math.random() < 0.5 ? 'rgba(120,200,90,0.55)' : 'rgba(40,100,40,0.45)';
-          ctx.lineWidth = 1 * k;
-          ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + (Math.random() - 0.5) * l, y - l); ctx.stroke();
-        }
-      } else if (th === 'bowser') {
-        const g = ctx.createRadialGradient(W / 2, W / 2, W * 0.1, W / 2, W / 2, W * 0.75);
-        g.addColorStop(0, '#c8340a'); g.addColorStop(0.55, '#8e1f06'); g.addColorStop(1, '#3a0d04');
-        ctx.fillStyle = g; ctx.fillRect(0, 0, W, W);
-        // 마그마 소용돌이
-        for (let i = 0; i < 2600; i++) {
-          const x = Math.random() * W, y = Math.random() * W, r = (6 + Math.random() * 34) * k;
-          ctx.fillStyle = ['rgba(255,190,60,0.35)', 'rgba(255,110,20,0.3)', 'rgba(90,20,10,0.4)'][(Math.random() * 3) | 0];
-          ctx.beginPath(); ctx.ellipse(x, y, r, r * (0.4 + Math.random() * 0.7), Math.random() * 6.28, 0, 6.28); ctx.fill();
-        }
-      } else {
-        // 무지개 로드: 칠흑 같은 우주
-        ctx.fillStyle = '#05030f'; ctx.fillRect(0, 0, W, W);
-        for (let i = 0; i < 5200; i++) {
-          const x = Math.random() * W, y = Math.random() * W, r = Math.random() * 1.9 * k;
-          const c = Math.random();
-          ctx.fillStyle = c < 0.6 ? 'rgba(255,255,255,0.85)' : (c < 0.8 ? 'rgba(160,200,255,0.8)' : 'rgba(255,190,230,0.8)');
-          ctx.beginPath(); ctx.arc(x, y, r, 0, 6.28); ctx.fill();
-        }
-        // 성운
-        for (let i = 0; i < 60; i++) {
-          const x = Math.random() * W, y = Math.random() * W, r = (60 + Math.random() * 220) * k;
-          const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-          const hue = 250 + Math.random() * 90;
-          g.addColorStop(0, 'hsla(' + hue + ',80%,60%,0.16)');
-          g.addColorStop(1, 'hsla(' + hue + ',80%,60%,0)');
-          ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.28); ctx.fill();
-        }
-      }
-    }
-
-    _paintRoad(ctx, k, roadW) {
-      const th = this.theme, n = this.nodes;
-      if (th === 'rainbow') {
-        // 육각 프리즘이 각인된 오팔 빛 유리 도로 - 세그먼트별 무지개 그라데이션
-        for (let i = 0; i < n.length; i++) {
-          const a = n[i], b = n[(i + 1) % n.length];
-          const hue = (i / n.length) * 360;
-          ctx.strokeStyle = 'hsl(' + hue + ',85%,58%)';
-          ctx.lineWidth = roadW;
-          ctx.beginPath(); ctx.moveTo(a.x * k, a.y * k); ctx.lineTo(b.x * k, b.y * k); ctx.stroke();
-        }
-        // 프리즘 하이라이트 + 육각 패턴
-        ctx.save();
-        this._path(ctx, k);
-        ctx.lineWidth = roadW; ctx.strokeStyle = 'rgba(255,255,255,0.001)'; ctx.stroke();
-        ctx.clip('nonzero');
-        ctx.globalCompositeOperation = 'overlay';
-        const hs = 22 * k;
-        for (let y = 0; y < WORLD * k; y += hs * 1.5) {
-          for (let x = 0; x < WORLD * k; x += hs * 1.74) {
-            const ox = ((y / (hs * 1.5)) | 0) % 2 ? hs * 0.87 : 0;
-            ctx.beginPath();
-            for (let s = 0; s < 6; s++) {
-              const ang = Math.PI / 3 * s;
-              const px = x + ox + Math.cos(ang) * hs * 0.5, py = y + Math.sin(ang) * hs * 0.5;
-              s ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
-            }
-            ctx.closePath();
-            ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1.2 * k; ctx.stroke();
-          }
-        }
-        ctx.restore();
-      } else if (th === 'bowser') {
-        ctx.strokeStyle = '#3b342f';
-        ctx.lineWidth = roadW;
-        this._path(ctx, k); ctx.stroke();
-        ctx.save();
-        this._path(ctx, k); ctx.lineWidth = roadW; ctx.stroke(); ctx.clip('nonzero');
-        // 불규칙하게 금이 간 석판 + 틈새로 새어나오는 마그마
-        for (let i = 0; i < 2200; i++) {
-          const x = Math.random() * WORLD * k, y = Math.random() * WORLD * k;
-          ctx.strokeStyle = Math.random() < 0.72 ? 'rgba(15,10,8,0.75)' : 'rgba(255,120,30,0.55)';
-          ctx.lineWidth = (Math.random() < 0.8 ? 1.4 : 2.6) * k;
-          ctx.beginPath(); ctx.moveTo(x, y);
-          let cx = x, cy = y;
-          for (let s = 0; s < 4; s++) {
-            cx += (Math.random() - 0.5) * 34 * k; cy += (Math.random() - 0.5) * 34 * k;
-            ctx.lineTo(cx, cy);
-          }
-          ctx.stroke();
-        }
-        for (let i = 0; i < 900; i++) {
-          const x = Math.random() * WORLD * k, y = Math.random() * WORLD * k;
-          ctx.fillStyle = 'rgba(90,80,72,' + (0.1 + Math.random() * 0.25) + ')';
-          ctx.beginPath(); ctx.ellipse(x, y, (4 + Math.random() * 16) * k, (3 + Math.random() * 11) * k, Math.random() * 6.28, 0, 6.28); ctx.fill();
-        }
-        ctx.restore();
-      } else {
-        // 마리오 서킷: 잘 정돈된 아스팔트
-        ctx.strokeStyle = '#57575f';
-        ctx.lineWidth = roadW;
-        this._path(ctx, k); ctx.stroke();
-        ctx.save();
-        this._path(ctx, k); ctx.lineWidth = roadW; ctx.stroke(); ctx.clip('nonzero');
-        for (let i = 0; i < 9000; i++) {
-          const x = Math.random() * WORLD * k, y = Math.random() * WORLD * k;
-          ctx.fillStyle = 'rgba(255,255,255,' + (Math.random() * 0.07) + ')';
-          ctx.fillRect(x, y, 2 * k, 2 * k);
-        }
-        for (let i = 0; i < 1400; i++) {
-          const x = Math.random() * WORLD * k, y = Math.random() * WORLD * k;
-          ctx.fillStyle = 'rgba(0,0,0,' + (Math.random() * 0.12) + ')';
-          ctx.beginPath(); ctx.arc(x, y, (2 + Math.random() * 9) * k, 0, 6.28); ctx.fill();
-        }
-        ctx.restore();
-        // 중앙 점선
-        ctx.save();
-        ctx.setLineDash([30 * k, 34 * k]);
-        ctx.strokeStyle = 'rgba(255,255,255,0.34)';
-        ctx.lineWidth = 3 * k;
-        this._path(ctx, k); ctx.stroke();
-        ctx.restore();
-      }
-    }
-
-    _paintBoost(ctx, k, t, roadW, surfaceMode) {
-      const nd = this.nodeAtT(t);
-      const w = roadW * 0.62, l = 74 * k;
-      ctx.save();
-      ctx.translate(nd.x * k, nd.y * k);
-      ctx.rotate(Math.atan2(nd.dy, nd.dx));
-      if (surfaceMode) {
-        ctx.fillStyle = SURFACE_COLOR[S.BOOST];
-        ctx.fillRect(-l / 2, -w / 2, l, w);
-      } else {
-        const th = this.theme;
-        const base = th === 'rainbow' ? '#f5ff3a' : (th === 'bowser' ? '#ff7a1e' : '#f5a623');
-        ctx.fillStyle = th === 'rainbow' ? 'rgba(20,20,10,0.35)' : 'rgba(255,255,255,0.15)';
-        ctx.fillRect(-l / 2, -w / 2, l, w);
-        for (let i = 0; i < 3; i++) {
-          ctx.fillStyle = base;
-          ctx.globalAlpha = 0.55 + i * 0.15;
-          const x = -l / 2 + i * (l / 3) + 4 * k;
-          ctx.beginPath();
-          ctx.moveTo(x, -w / 2); ctx.lineTo(x + l / 5, 0); ctx.lineTo(x, w / 2);
-          ctx.lineTo(x + l / 9, 0); ctx.closePath(); ctx.fill();
-        }
-        ctx.globalAlpha = 1;
-      }
-      ctx.restore();
-    }
-
-    _paintStartLine(ctx, k, roadW, surfaceMode) {
-      if (surfaceMode) return;
-      const nd = this.nodes[0];
-      ctx.save();
-      ctx.translate(nd.x * k, nd.y * k);
-      ctx.rotate(Math.atan2(nd.dy, nd.dx));
-      const cols = 10, cw = roadW / cols, rows = 3, ch = 13 * k;
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-          ctx.fillStyle = ((r + c) % 2) ? '#ffffff' : '#1a1a1a';
-          ctx.fillRect(-rows * ch / 2 + r * ch, -roadW / 2 + c * cw, ch, cw);
-        }
-      }
-      ctx.restore();
     }
 
     /* ---------------- 오브젝트 ---------------- */
@@ -452,7 +218,7 @@
       this.decor = [];
       const push = (t, side, type, scale, minOff, z) => {
         const nd = this.nodeAtT(t);
-        const off = (this.width * 0.5 + (minOff || 70) + Math.random() * 150) * side;
+        const off = (this.width * 0.5 + (minOff || 120) + Math.random() * 240) * side;
         this.decor.push({ x: nd.x + nd.nx * off, y: nd.y + nd.ny * off, type, scale: scale || 1, z: z || 0 });
       };
       if (this.theme === 'circuit') {

@@ -26,6 +26,7 @@
       this.hudCanvas = document.getElementById('hudCanvas');
       this.renderer = new global.RenderSystem.Renderer(this.gameCanvas);
       this.hud = new global.HUDSystem.HUD(this.hudCanvas);
+      this.hud.renderer = this.renderer;
       this.input = new global.Game.Input();
 
       global.Lobby.init(cfg => this.startRace(cfg));
@@ -113,8 +114,15 @@
       steps.push(() => {
         track = global.TrackSystem.get(cfg.trackId);
         track.laps = cfg.laps;
-        bar.style.width = '38%';
-        title.textContent = '캐릭터 스프라이트 굽는 중…';
+        bar.style.width = '22%';
+        title.textContent = '트랙 메시 · 텍스처 굽는 중…';
+      });
+
+      steps.push(() => {
+        global.Lobby.suspendPreview();      // 로비 WebGL 컨텍스트 반납
+        this.renderer.setTrack(track);
+        bar.style.width = '48%';
+        title.textContent = '카트 모델 조립 중…';
       });
 
       const racers = [{ name: '나 (Player)', combo: cfg.combo, isPlayer: true }]
@@ -123,11 +131,11 @@
       racers.forEach((r, i) => {
         steps.push(() => {
           const k = new global.KartSystem.Kart({
-            id: i, name: r.name, combo: r.combo, isPlayer: r.isPlayer,
-            sprite: global.Sprites.build(r.combo, 176), track
+            id: i, name: r.name, combo: r.combo, isPlayer: r.isPlayer, track
           });
+          this.renderer.addKart(k);
           karts.push(k);
-          bar.style.width = (38 + (i + 1) / racers.length * 52) + '%';
+          bar.style.width = (48 + (i + 1) / racers.length * 42) + '%';
         });
       });
 
@@ -150,9 +158,7 @@
         });
         world.start();
         this.renderer.particles.length = 0;
-        this.renderer.camera.yaw = world.player.angle;
-        this.renderer.camera.x = world.player.x - Math.cos(world.player.angle) * 180;
-        this.renderer.camera.y = world.player.y - Math.sin(world.player.angle) * 180;
+        this.renderer.camera.reset(world.player);
         this.world = world;
         this.paused = false;
         document.getElementById('pauseOverlay').classList.add('hidden');
@@ -186,6 +192,7 @@
       this.raf = null;
       this.world = null;
       this.show('lobby');
+      global.Lobby.resumePreview();
     },
 
     showResults(order) {

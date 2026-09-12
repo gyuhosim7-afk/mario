@@ -37,7 +37,7 @@
 
     showToast(text, color, itemId) {
       this.toast = text; this.toastColor = color || '#fff';
-      this.toastIcon = itemId ? global.Sprites.itemArt(itemId) : null;
+      this.toastIcon = itemId ? global.Icons.get(itemId) : null;
       this.toastT = 2.0;
     }
     showBig(text, color, dur) { this.bigText = text; this.bigColor = color || '#fff'; this.bigT = dur || 1.2; }
@@ -114,7 +114,7 @@
         ctx.font = (k.isPlayer ? '800 ' : '600 ') + (13 * u) + 'px system-ui, sans-serif';
         ctx.fillText(k.name, 50 * u, y + 17 * u);
         if (k.item) {
-          const ic = global.Sprites.itemArt(k.item.id);
+          const ic = global.Icons.get(k.item.id);
           if (ic) ctx.drawImage(ic, listW - 26 * u, y + 2 * u, 20 * u, 20 * u);
         }
       });
@@ -154,7 +154,7 @@
           const wob = Math.sin(world.time * 40) * 0.16;
           ctx.rotate(wob); ctx.scale(1 + Math.abs(wob) * 0.3, 1 - Math.abs(wob) * 0.2);
         }
-        const art = global.Sprites.itemArt(shown.id);
+        const art = global.Icons.get(shown.id);
         if (art) {
           ctx.drawImage(art, -slot * 0.36, -slot * 0.36, slot * 0.72, slot * 0.72);
         } else {
@@ -176,7 +176,7 @@
       ctx.fillText('SPACE', slot / 2, slot + 16 * u);
       // 동전
       ctx.textAlign = 'left';
-      const coinArt = global.Sprites.obj('coin');
+      const coinArt = global.Icons.get('coin');
       ctx.drawImage(coinArt, slot + 12 * u, slot * 0.62 - 22 * u, 26 * u, 26 * u);
       ctx.font = '900 ' + (22 * u) + 'px system-ui, sans-serif';
       ctx.fillStyle = '#ffd54a';
@@ -254,6 +254,28 @@
         ctx.fillStyle = '#9fe8ff';
         roundRect(ctx, 0, 0, 120 * u * Math.min(1, me.slipTimer / global.KartSystem.SLIP_REQUIRED), 7 * u, 4 * u); ctx.fill();
         ctx.restore();
+      }
+
+      /* ---------- 부스터 스피드 라인 ---------- */
+      if (me.boostTimer > 0 || me.state === 'BULLET' || me.speedRatio > 1.02) {
+        ctx.save();
+        ctx.strokeStyle = me.state === 'BULLET' ? 'rgba(255,240,180,0.4)' : 'rgba(255,255,255,0.18)';
+        ctx.lineWidth = 2 * u;
+        for (let i = 0; i < 12; i++) {
+          const a = Math.random() * 6.283, r = H * (0.34 + Math.random() * 0.6);
+          const x = W / 2 + Math.cos(a) * r, y = H / 2 + Math.sin(a) * r * 0.72;
+          const l = (22 + Math.random() * 78) * u;
+          ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l * 0.72); ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      /* ---------- 화면 플래시 (번개 / 피격) ---------- */
+      const R = this.renderer;
+      if (R && R.flash > 0) {
+        ctx.fillStyle = 'rgba(' + R.flashColor + ',' + Math.min(0.8, R.flash) + ')';
+        ctx.fillRect(0, 0, W, H);
+        R.flash -= dt * 2.4;
       }
 
       /* ---------- 토스트 / 대형 문구 ---------- */

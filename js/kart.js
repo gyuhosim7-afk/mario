@@ -425,6 +425,7 @@
     }
 
     _checkLap() {
+      if (this.finished) return;      // 완주 후에는 랩을 더 세지 않는다
       const tr = this.track;
       const N = tr.nodes.length;
       const prev = this._prevNode, cur = this.node;

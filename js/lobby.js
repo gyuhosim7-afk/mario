@@ -53,7 +53,7 @@
         lapCount: document.getElementById('lapCount'),
         myPing: document.getElementById('myPing')
       };
-      this.pctx = this.$.preview.getContext('2d');
+      this._initPreview();
 
       this.$.tabs.addEventListener('click', e => {
         const b = e.target.closest('.tab'); if (!b) return;
@@ -88,6 +88,7 @@
       this.$.classBadge.textContent = c.character.clsName;
       this.$.totalBadge.textContent = 'TOTAL ' + c.total.toFixed(1);
       this.$.flavor.textContent = c.character.flavor;
+      this._syncPreviewModel();
       if (this.slots[0]) {
         this.slots[0].combo = c;
         this.renderRoom();
@@ -103,9 +104,11 @@
         const selId = this.sel[tab.key];
         const card = document.createElement('button');
         card.className = 'part-card' + (item.id === selId ? ' sel' : '');
-        const cv = document.createElement('canvas');
-        cv.width = 88; cv.height = 62;
-        card.appendChild(cv);
+        const im = document.createElement('img');
+        im.className = 'thumb';
+        im.width = 88; im.height = 66;
+        im.alt = item.name;
+        card.appendChild(im);
         const nm = document.createElement('div');
         nm.className = 'nm'; nm.textContent = item.name;
         card.appendChild(nm);
@@ -115,15 +118,13 @@
         card.appendChild(cl);
         g.appendChild(card);
 
-        // 미니 프리뷰
+        // 미니 프리뷰 (3D 스냅샷, 조합별 캐시)
         const probe = St.build(
           this.tab === 'character' ? item.id : this.sel.char,
           this.tab === 'frame' ? item.id : this.sel.frame,
           this.tab === 'wheel' ? item.id : this.sel.wheel,
           this.tab === 'glider' ? item.id : this.sel.glider);
-        const cx = cv.getContext('2d');
-        cx.clearRect(0, 0, 88, 62);
-        global.Sprites.preview(cx, probe, 0.85, 0.62, 44, 46);
+        im.src = global.Icons.kartThumbURL(probe, 132);
 
         card.addEventListener('mouseenter', () => { this.$.desc.textContent = item.desc || ''; });
         card.addEventListener('click', () => {
@@ -170,26 +171,110 @@
       });
     },
 
-    /* ---------- 3D 프리뷰 루프 ---------- */
+    /* ---------- 3D 프리뷰 (three.js 실시간 턴테이블) ---------- */
+    _initPreview() {
+      const T = global.THREE;
+      // 컨텍스트를 한 번 잃은 캔버스는 재사용할 수 없으므로 새 노드로 교체한다
+      const prev = this.$.preview;
+      const cv = prev.cloneNode(false);
+      prev.parentNode.replaceChild(cv, prev);
+      this.$.preview = cv;
+      const gl = new T.WebGLRenderer({ canvas: cv, antialias: true, alpha: true });
+      gl.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+      gl.setSize(cv.clientWidth || 520, cv.clientHeight || 300, false);
+      gl.toneMapping = T.ACESFilmicToneMapping;
+      gl.toneMappingExposure = 1.1;
+      gl.outputColorSpace = T.SRGBColorSpace;
+      gl.shadowMap.enabled = true;
+      gl.shadowMap.type = T.PCFSoftShadowMap;
+
+      const sc = new T.Scene();
+      sc.add(new T.HemisphereLight(0x9fc4ff, 0x141a33, 1.7));
+      const key = new T.DirectionalLight(0xffffff, 3.2);
+      key.position.set(70, 110, 60);
+      key.castShadow = true;
+      key.shadow.mapSize.set(1024, 1024);
+      key.shadow.camera.left = -70; key.shadow.camera.right = 70;
+      key.shadow.camera.top = 70; key.shadow.camera.bottom = -70;
+      key.shadow.camera.near = 20; key.shadow.camera.far = 300;
+      key.shadow.bias = -0.002;
+      sc.add(key);
+      const rim = new T.DirectionalLight(0x6ab8ff, 2.2);
+      rim.position.set(-80, 40, -70);
+      sc.add(rim);
+      const warm = new T.DirectionalLight(0xffb46a, 1.0);
+      warm.position.set(40, 20, -60);
+      sc.add(warm);
+
+      // 스테이지 (원형 플랫폼 + 발광 링)
+      const stage = new T.Group();
+      const disc = new T.Mesh(
+        new T.CylinderGeometry(62, 66, 5, 48),
+        new T.MeshStandardMaterial({ color: new T.Color('#121a35'), roughness: 0.55, metalness: 0.4 })
+      );
+      disc.position.y = -2.5;
+      disc.receiveShadow = true;
+      stage.add(disc);
+      [42, 54, 62].forEach((r, i) => {
+        const ring = new T.Mesh(
+          new T.TorusGeometry(r, 0.55, 8, 64),
+          new T.MeshBasicMaterial({ color: new T.Color(i === 2 ? '#ffd54a' : '#4fc3ff'), toneMapped: false })
+        );
+        ring.rotation.x = Math.PI / 2;
+        ring.position.y = 0.4;
+        stage.add(ring);
+      });
+      sc.add(stage);
+
+      const cam = new T.PerspectiveCamera(34, (cv.clientWidth || 520) / (cv.clientHeight || 300), 1, 900);
+      this._pv = { gl, sc, cam, model: null, raf: 0, stage };
+      this._syncPreviewModel();
+    },
+
+    _syncPreviewModel() {
+      const pv = this._pv;
+      if (!pv || !this.combo) return;   // rebuild() 이전에는 아직 조합이 없다
+      if (pv.model) pv.sc.remove(pv.model);
+      const m = global.Models.buildKart(this.combo);
+      m.rotation.y = 0;
+      pv.sc.add(m);
+      pv.model = m;
+    },
+
+    suspendPreview() {
+      const pv = this._pv;
+      if (!pv) return;
+      cancelAnimationFrame(pv.raf);
+      pv.gl.dispose();
+      if (pv.gl.forceContextLoss) pv.gl.forceContextLoss();
+      this._pv = null;
+      if (global.Icons.release) global.Icons.release();
+    },
+
+    resumePreview() {
+      if (!this._pv) { this._initPreview(); this.loop(); }
+    },
+
     loop() {
       const step = () => {
-        const cv = this.$.preview, cx = this.pctx;
-        const w = cv.width, h = cv.height;
-        cx.clearRect(0, 0, w, h);
-        // 스테이지 바닥
-        const g = cx.createRadialGradient(w / 2, h * 0.82, 8, w / 2, h * 0.82, w * 0.42);
-        g.addColorStop(0, 'rgba(120,160,255,.28)'); g.addColorStop(1, 'rgba(20,30,70,0)');
-        cx.fillStyle = g;
-        cx.beginPath(); cx.ellipse(w / 2, h * 0.82, w * 0.36, h * 0.13, 0, 0, 6.28); cx.fill();
-        cx.strokeStyle = 'rgba(140,180,255,.18)';
-        for (let i = 1; i <= 4; i++) {
-          cx.beginPath(); cx.ellipse(w / 2, h * 0.82, w * 0.09 * i, h * 0.033 * i, 0, 0, 6.28); cx.stroke();
+        const pv = this._pv;
+        if (!pv) return;
+        pv.raf = requestAnimationFrame(step);
+        const cv = this.$.preview;
+        const w = cv.clientWidth || 520, h = cv.clientHeight || 300;
+        if (cv.width !== w * pv.gl.getPixelRatio() || pv.cam.aspect !== w / h) {
+          pv.gl.setSize(w, h, false);
+          pv.cam.aspect = w / h;
+          pv.cam.updateProjectionMatrix();
         }
-        if (this.spinning) this.previewAngle += 0.012;
-        cx.fillStyle = 'rgba(0,0,0,.32)';
-        cx.beginPath(); cx.ellipse(w / 2, h * 0.8, 66, 17, 0, 0, 6.28); cx.fill();
-        global.Sprites.preview(cx, this.combo, this.previewAngle, 2.05, w / 2, h * 0.78);
-        requestAnimationFrame(step);
+        if (this.spinning) this.previewAngle += 0.0075;
+        const a = this.previewAngle;
+        const d = 148;
+        pv.cam.position.set(Math.cos(a) * d, 52 + Math.sin(a * 0.7) * 6, Math.sin(a) * d);
+        pv.cam.lookAt(0, 16, 0);
+        if (pv.model) pv.model.position.y = Math.sin(Date.now() * 0.0016) * 1.4;
+        pv.stage.rotation.y += 0.0015;
+        pv.gl.render(pv.sc, pv.cam);
       };
       step();
     },
@@ -200,7 +285,7 @@
       this.$.rankVal.textContent = rank + '위';
       const probs = global.ItemSystem.probabilities(rank, 8);
       this.$.probList.innerHTML = probs.map(p =>
-        '<div class="prob"><img src="' + global.Sprites.itemArtURL(p.id) + '" alt="' + p.item.name + '" title="' + p.item.name + '">' +
+        '<div class="prob"><img src="' + global.Icons.url(p.id) + '" alt="' + p.item.name + '" title="' + p.item.name + '">' +
         '<span class="pb"><i class="pf" style="width:' + p.pct.toFixed(1) + '%;background:' + p.item.color + '"></i></span>' +
         '<span class="pv">' + p.pct.toFixed(1) + '%</span></div>').join('');
     },
@@ -218,10 +303,10 @@
       const tick = (now) => {
         const dt = Math.min(0.05, (now - last) / 1000); last = now;
         r.update(dt);
-        slot.innerHTML = r.display ? '<img src="' + global.Sprites.itemArtURL(r.display.id) + '" alt="">' : '?';
+        slot.innerHTML = r.display ? '<img src="' + global.Icons.url(r.display.id) + '" alt="">' : '?';
         if (r.active) { global.SFX.sfx('item'); requestAnimationFrame(tick); }
         else {
-          slot.innerHTML = '<img src="' + global.Sprites.itemArtURL(result.id) + '" alt="">';
+          slot.innerHTML = '<img src="' + global.Icons.url(result.id) + '" alt="">';
           slot.classList.remove('spinning');
           this._rolling = false;
           global.SFX.sfx('itemget');

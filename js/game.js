@@ -81,7 +81,8 @@
 
       /* ---- AI ---- */
       if (this.state !== 'COUNTDOWN') {
-        for (const k of this.karts) if (k.ai && !k.finished) k.ai.update(dt, this);
+        // 완주한 카트도 계속 AI가 몰아 코스를 벗어나지 않게 한다
+        for (const k of this.karts) if (k.ai) k.ai.update(dt, this);
       }
       // 완주한 플레이어는 자동 주행
       if (this.player && this.player.finished && !this.player.ai) {
@@ -261,11 +262,11 @@
 
     _thwompHits() {
       for (const t of this.track.thwomps) {
-        if (t.h > 26) continue;
+        if (t.h > 18) continue;
         for (const k of this.karts) {
           if (k.invincible) continue;
           const d = Math.hypot(k.x - t.x, k.y - t.y);
-          if (d < 46) {
+          if (d < 40) {
             this.hitKart(k, 'knock', k.x - t.x, k.y - t.y, 0.8, null);
             this.renderer.camera.shake = Math.max(this.renderer.camera.shake, 0.8);
           }
