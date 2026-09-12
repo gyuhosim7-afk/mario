@@ -400,7 +400,7 @@
       /* --- 하늘 돔 --- */
       const skyTex = global.Tex.tex(global.Tex.skyDome(theme), 1, 1);
       const sky = new T.Mesh(
-        new T.SphereGeometry(7000, 40, 24),
+        new T.SphereGeometry(8600, 40, 24),
         new T.MeshBasicMaterial({ map: skyTex, side: T.BackSide, fog: false, toneMapped: false })
       );
       sky.renderOrder = -1;
@@ -409,22 +409,26 @@
 
       /* --- 지형 --- */
       if (theme === 'circuit') {
-        const gt = global.Tex.get('grass', global.Tex.grass, 170, 170);
+        const gt = global.Tex.get('grass', global.Tex.grass, 210, 210);
         const gm = new T.MeshStandardMaterial({ map: gt.color, normalMap: gt.normal, roughness: 1 });
-        const ground = new T.Mesh(new T.PlaneGeometry(13000, 13000), gm);
+        const gg = new T.PlaneGeometry(16000, 16000, 120, 120);
+        this._displace(gg, track, 620, 560);
+        const ground = new T.Mesh(gg, gm);
         ground.rotation.x = -Math.PI / 2;
-        ground.position.set(2048, -0.6, 2048);
+        ground.position.set(track.world / 2, -0.6, track.world / 2);
         ground.receiveShadow = true;
         g.add(ground);
       } else if (theme === 'bowser') {
-        const lt = global.Tex.get('lavaground', global.Tex.lavaField, 75, 75);
+        const lt = global.Tex.get('lavaground', global.Tex.lavaField, 92, 92);
         const lm = new T.MeshStandardMaterial({
           map: lt.color, emissive: new T.Color('#ff5a10'), emissiveMap: lt.emissive,
-          emissiveIntensity: 1.15, roughness: 0.85
+          emissiveIntensity: 0.72, roughness: 0.85
         });
-        const ground = new T.Mesh(new T.PlaneGeometry(13000, 13000), lm);
+        const bg2 = new T.PlaneGeometry(16000, 16000, 110, 110);
+        this._displace(bg2, track, 520, 640, 0.55);
+        const ground = new T.Mesh(bg2, lm);
         ground.rotation.x = -Math.PI / 2;
-        ground.position.set(2048, -2.2, 2048);
+        ground.position.set(track.world / 2, -2.2, track.world / 2);
         g.add(ground);
         this.lavaMat = lm;
         this.lavaTex = lt;
@@ -449,7 +453,7 @@
 
       /* --- 커브 둔턱 --- */
       if (theme !== 'rainbow') {
-        const kc = theme === 'bowser' ? ['#d8cfc4', '#2b2320'] : ['#f2f2f2', '#e02a2a'];
+        const kc = theme === 'bowser' ? ['#efe6d4', '#241d1a'] : ['#f2f2f2', '#e02a2a'];
         const kt = global.Tex.tex(global.Tex.kerb(kc[0], kc[1]), 1, 1);
         const kMat = new T.MeshStandardMaterial({ map: kt, roughness: 0.6 });
         [-1, 1].forEach(s => {
@@ -544,7 +548,7 @@
         const tpl = global.Models.buildProp(type);
         const mats = byType[type].map(d => {
           const m = new T.Matrix4();
-          const rotY = Math.atan2(2048 - d.y, 2048 - d.x);
+          const rotY = Math.atan2(2500 - d.y, 2500 - d.x);
           m.compose(
             new T.Vector3(d.x, d.z || 0, d.y),
             new T.Quaternion().setFromEuler(new T.Euler(0, rotY + Math.random() * 0.6, 0)),
@@ -577,17 +581,78 @@
         return n;
       });
 
+      /* --- 도로를 가로지르는 게이트 --- */
+      (track.gantrySpots || []).forEach((ni, idx) => {
+        const nd = track.nodes[ni];
+        const gt = global.Models.optimize(global.Models.buildGantry(theme, track.width, idx === 0 ? 'start' : 'mid'));
+        gt.position.set(nd.x, 0, nd.y);
+        gt.rotation.y = -Math.atan2(nd.dy, nd.dx);
+        g.add(gt);
+      });
+
       /* --- 배경 랜드마크 --- */
       const lm = global.Models.buildLandmark(theme);
-      if (theme === 'rainbow') lm.position.set(-1800, 1100, -1400);
-      else if (theme === 'bowser') lm.position.set(2048, 30, -2200);
-      else lm.position.set(2048, 0, -2100);
+      if (theme === 'rainbow') lm.position.set(-2200, 1300, -1700);
+      else if (theme === 'bowser') lm.position.set(2500, 30, -2700);
+      else lm.position.set(2500, 0, -2600);
       lm.traverse(o => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
       g.add(lm);
       this.landmark = lm;
 
+      /* --- 테마별 대형 배경물 --- */
+      this.backdrop = [];
+      for (const it of global.Models.buildBackdrop(theme, track.world)) {
+        // 배경물은 머티리얼 단위로 병합해 드로우콜을 줄인다 (그림자도 안 만든다)
+        global.Models.optimize(it.obj);
+        it.obj.traverse(o => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
+        it.obj.position.set(it.x, it.y, it.z);
+        it.obj.rotation.y = it.rot;
+        it.obj.scale.setScalar(it.scale);
+        it.baseY = it.y;
+        it.phase = Math.random() * 6.28;
+        g.add(it.obj);
+        if (it.anim) this.backdrop.push(it);
+      }
+
       this._setupComposer(theme);
       this.theme = theme;
+    }
+
+    /**
+     * 지면에 기복을 준다. 트랙 주변 flatR 안쪽은 평평하게 두고,
+     * 멀어질수록 완만한 언덕이 솟는다 (2옥타브 값 노이즈).
+     */
+    _displace(geometry, track, maxH, flatR, rough) {
+      const pos = geometry.attributes.position;
+      const c = track.world / 2;
+      const bound = track.world + 1400;
+      const hash = (x, y) => {
+        const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+        return n - Math.floor(n);
+      };
+      const vnoise = (x, y, cell) => {
+        const gx = x / cell, gy = y / cell;
+        const x0 = Math.floor(gx), y0 = Math.floor(gy);
+        const tx = gx - x0, ty = gy - y0;
+        const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+        const a = hash(x0, y0), b = hash(x0 + 1, y0), d = hash(x0, y0 + 1), e = hash(x0 + 1, y0 + 1);
+        return (a * (1 - sx) + b * sx) * (1 - sy) + (d * (1 - sx) + e * sx) * sy;
+      };
+      for (let i = 0; i < pos.count; i++) {
+        const wx = c + pos.getX(i), wz = c + pos.getY(i);
+        let d;
+        if (wx < -bound || wx > bound || wz < -bound || wz > bound) d = 99999;
+        else d = track.project(wx, wz).dist;
+        let t = (d - flatR) / 2400;
+        t = t < 0 ? 0 : (t > 1 ? 1 : t);
+        t = t * t * (3 - 2 * t);
+        const n = vnoise(wx, wz, 900) * 0.65 + vnoise(wx, wz, 320) * 0.35;
+        pos.setZ(i, t * maxH * (0.25 + 0.75 * n) * (rough === undefined ? 1 : rough) +
+                    t * (rough ? vnoise(wx, wz, 140) * 90 : 0));
+      }
+      pos.needsUpdate = true;
+      geometry.computeVertexNormals();
+      return geometry;
     }
 
     _disposeGroup(grp) {
@@ -752,6 +817,12 @@
           n.position.y = t.h + 34;
           n.rotation.z = t.shake * (Math.random() - 0.5) * 0.12;
         });
+      }
+
+      // 배경물 부유 / 회전
+      for (const it of (this.backdrop || [])) {
+        if (it.anim === 'float') it.obj.position.y = it.baseY + Math.sin(this.time * 0.4 + it.phase) * 26;
+        else if (it.anim === 'spin') it.obj.rotation.y += dt * 0.06;
       }
 
       // 용암 / 폭포 스크롤

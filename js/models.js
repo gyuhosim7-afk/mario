@@ -76,6 +76,42 @@
     });
     return mesh(g, m);
   }
+  /** 회전체(lathe): [[반지름, 높이], ...] 프로파일을 돌려 유기적인 덩어리를 만든다 */
+  function lathe(profile, m, seg) {
+    const key = 'lathe' + profile.map(p => p.join(',')).join('|') + (seg || 16);
+    const g = geo(key, () => {
+      const pts = profile.map(p => new T.Vector2(Math.max(0.001, p[0]), p[1]));
+      const gg = new T.LatheGeometry(pts, seg || 16);
+      gg.computeVertexNormals();
+      return gg;
+    });
+    return mesh(g, m);
+  }
+
+  /**
+   * 끝으로 갈수록 가늘어지는 뼈대 (어깨 두껍고 손목 얇게).
+   * 원통 + 양 끝 반구를 하나의 지오메트리로 구워 드로우콜을 늘리지 않는다.
+   */
+  function taperBone(len, r0, r1, m) {
+    const key = 'tbone' + [len, r0, r1].map(v => v.toFixed(2)).join('_');
+    const g = geo(key, () => {
+      const BGU = T.BufferGeometryUtils;
+      const shaft = new T.CylinderGeometry(r1, r0, len, 14, 1, true);
+      shaft.translate(0, len / 2, 0);
+      if (!BGU || !BGU.mergeGeometries) return shaft;
+      const capA = new T.SphereGeometry(r0, 14, 8);
+      const capB = new T.SphereGeometry(r1, 14, 8);
+      capB.translate(0, len, 0);
+      const parts = [shaft, capA, capB].map(x => {
+        const nx = x.index ? x.toNonIndexed() : x;
+        if (!nx.attributes.uv) nx.setAttribute('uv', new T.BufferAttribute(new Float32Array(nx.attributes.position.count * 2), 2));
+        return nx;
+      });
+      try { return BGU.mergeGeometries(parts, false) || shaft; } catch (e) { return shaft; }
+    });
+    return mesh(g, m);
+  }
+
   function starShape(points, outer, inner, depth, m) {
     const g = geo('star' + [points, outer, inner, depth].join('_'), () => {
       const s = new T.Shape();
@@ -108,13 +144,11 @@
    * ============================================================= */
 
   /** 관절 피벗: +Y 방향으로 길이 len 만큼 뻗는 캡슐을 자식으로 갖는다 */
-  function bone(len, r, m, name) {
+  function bone(len, r0, r1, m, name) {
     const j = new T.Object3D();
     j.userData.joint = true;
     j.name = name || '';
-    const c = mesh(new T.CapsuleGeometry(r, Math.max(0.2, len - r * 2), 5, 12), m);
-    c.position.y = len / 2;
-    j.add(c);
+    j.add(taperBone(len, r0, r1 === undefined ? r0 * 0.78 : r1, m));
     j.userData.len = len;
     return j;
   }
@@ -168,8 +202,12 @@
     const pelvis = joint(0, pelvisY, 0, 'pelvis');
     pelvis.userData.joint = false;   // 정적 -> 카트 본체와 함께 병합
     root.add(pelvis);
-    const hips = capsule(torsoR * 0.92, 2.2 * S, body, 0, 1.6 * S, 0);
-    hips.scale.set(1, 1, 1.05);
+    // 골반: 아래가 넓고 위로 좁아지는 회전체
+    const hips = lathe([
+      [0.2, -0.6], [torsoR * 0.62, -0.2], [torsoR * 0.95, 1.0],
+      [torsoR * 0.88, 2.4], [torsoR * 0.66, 3.2], [0.2, 3.4]
+    ].map(v => [v[0], v[1] * S]), body, 18);
+    hips.scale.set(1, 1, 1.06);
     pelvis.add(hips);
 
     /* ---------- 다리 (착좌: 허벅지 앞으로, 정강이 아래로, 발은 페달) ---------- */
@@ -177,24 +215,30 @@
     [-1, 1].forEach(sd => {
       const hip = joint(0.6 * S, 1.4 * S, sd * 3.3 * S, 'hip');
       pelvis.add(hip);
-      const thigh = bone(thighLen, 2.3 * S, body, 'thigh');
+      const thigh = bone(thighLen, 2.55 * S, 1.95 * S, body, 'thigh');
       thigh.rotation.z = -Math.PI / 2 + 0.18;      // 앞으로 거의 수평
       thigh.rotation.x = sd * -0.10;
       hip.add(thigh);
 
       const knee = joint(0, thighLen, 0, 'knee');
       thigh.add(knee);
-      const shin = bone(shinLen, 1.9 * S, body, 'shin');
+      const shin = bone(shinLen, 1.95 * S, 1.45 * S, body, 'shin');
       shin.rotation.z = -1.15;                     // 무릎에서 아래로 꺾임
       knee.add(shin);
 
       const ankle = joint(0, shinLen, 0, 'ankle');
       shin.add(ankle);
-      const foot = rounded(5.2 * S, 2.4 * S, 3.0 * S, 0.9 * S, shoeMat);
-      foot.rotation.x = Math.PI / 2;
+      // 신발: 둥근 몸통 + 앞코
+      const foot = sphere(2.3 * S, shoeMat, 0, 0, 0, 12);
+      foot.scale.set(1.05, 0.85, 1.9);
+      foot.rotation.y = 0;
+      foot.position.set(0.9 * S, 0.2 * S, 0);
       foot.rotation.z = 1.35;
-      foot.position.set(1.3 * S, 0.4 * S, 0);
       ankle.add(foot);
+      const toe = sphere(1.7 * S, shoeMat, 0, 0, 0, 10);
+      toe.scale.set(1.0, 0.8, 1.5);
+      toe.position.set(1.5 * S, -1.9 * S, 0);
+      ankle.add(toe);
       [hip, thigh, knee, shin, ankle].forEach(n => { n.userData.joint = false; });
       legs.push({ hip, thigh, knee, shin, ankle });
     });
@@ -202,14 +246,27 @@
     /* ---------- 몸통 ---------- */
     const torso = joint(0, torsoPivot, 0, 'torso');
     pelvis.add(torso);
-    const chest = capsule(torsoR, torsoLen, body, 0, chestY - 0.4 * S, 0);
-    chest.scale.set(1.0, 1, 0.88);
+    // 몸통: 허리에서 가슴으로 부풀었다가 어깨에서 목으로 좁아지는 회전체
+    const chest = lathe([
+      [0.2, -1.4], [torsoR * 0.74, -0.9], [torsoR * 0.92, 1.2],
+      [torsoR * 0.88, 3.0], [torsoR * 1.0, 5.2], [torsoR * 0.93, 7.0],
+      [torsoR * 0.66, 8.6], [torsoR * 0.34, 9.4], [0.2, 9.6]
+    ].map(v => [v[0], v[1] * S]), body, 18);
+    chest.position.y = chestY - 3.4 * S;
+    chest.scale.set(1.0, 1, 0.9);
     torso.add(chest);
-    const bellyM = sphere(torsoR * 0.84, belly, torsoR * 0.5, chestY - 1.0 * S, 0, 14);
-    bellyM.scale.set(0.7, 1.15, 0.92);
+    // 배: 앞쪽에만 얹는 밝은 패치
+    const bellyM = sphere(torsoR * 0.8, belly, torsoR * 0.46, chestY - 1.2 * S, 0, 14);
+    bellyM.scale.set(0.62, 1.2, 0.9);
     torso.add(bellyM);
-    [-1, 1].forEach(sd => torso.add(sphere(2.9 * S, body, 0.4 * S, shoY, sd * shZ, 12)));
-    torso.add(cyl(1.75 * S, 2.0 * S, 3.0 * S, body, 0, neckY, 0, 10));
+    // 어깨 볼륨
+    [-1, 1].forEach(sd => {
+      const shb = sphere(2.95 * S, body, 0.3 * S, shoY, sd * shZ, 12);
+      shb.scale.set(1, 0.92, 1.05);
+      torso.add(shb);
+    });
+    // 목: 아래가 굵고 위가 가는 형태
+    torso.add(taperBone(3.2 * S, 2.05 * S, 1.6 * S, body).translateY(neckY - 1.4 * S));
 
     /* ---------- 머리 ---------- */
     const headJ = joint(0, neckY + 1.2 * S, 0, 'head');
@@ -225,9 +282,13 @@
       hd.position.y = hc; hd.rotation.set(0.3, 0.6, 0.1);
       headJ.add(hd);
     } else {
-      const hd = sphere(headR, body, 0, hc, 0, 18);
-      hd.scale.set(1, 1.02, 0.97);
+      const hd = sphere(headR, body, 0, hc, 0, 20);
+      hd.scale.set(1, 1.03, 0.96);
       headJ.add(hd);
+      // 턱: 아래쪽 앞으로 살짝 나온 볼륨
+      const jawV = sphere(headR * 0.72, body, headR * 0.22, hc - headR * 0.52, 0, 14);
+      jawV.scale.set(1.05, 0.72, 0.95);
+      headJ.add(jawV);
     }
 
     /* ---------- 팔 (IK 로 핸들을 잡는다) ---------- */
@@ -236,16 +297,18 @@
       const shoulder = joint(0.5 * S, shoY - 0.3 * S, sd * shZ, 'shoulder');
       shoulder.userData.joint = false;   // 메시 없는 순수 피벗
       torso.add(shoulder);
-      const upper = bone(upperLen, 1.7 * S, body, 'upperarm');
+      const upper = bone(upperLen, 1.95 * S, 1.45 * S, body, 'upperarm');
       upper.rotation.z = -1.52;                 // 기본 착좌 포즈: 팔을 앞으로
       shoulder.add(upper);
       const elbow = joint(0, upperLen, 0, 'elbow');
       elbow.userData.joint = false;
       upper.add(elbow);
-      const fore = bone(foreLen, 1.5 * S, body, 'forearm');
+      const fore = bone(foreLen, 1.5 * S, 1.15 * S, body, 'forearm');
       fore.rotation.z = 0.34;                   // 팔꿈치 살짝 굽힘
       elbow.add(fore);
-      fore.add(sphere(2.2 * S, ch.id === 'volt' ? mat(c.trim, { metal: 0.6, rough: 0.4 }) : white, 0, foreLen, 0, 12));
+      const glove = sphere(2.25 * S, ch.id === 'volt' ? mat(c.trim, { metal: 0.6, rough: 0.4 }) : white, 0, foreLen, 0, 12);
+      glove.scale.set(1.0, 0.88, 0.78);        // 주먹 형태로 살짝 눌러줌
+      fore.add(glove);
       // 손 끝 기준점은 빈 피벗으로 둔다. 메시는 병합 시 제거되므로 참조가 끊긴다
       const handTip = new T.Object3D();
       handTip.position.set(0, foreLen, 0);
@@ -995,6 +1058,216 @@
     return g;
   }
 
+  /* ---------------- 트랙 위 게이트 / 배경 세트 ---------------- */
+
+  /** 도로를 가로지르는 게이트(갠트리). 코스가 '설계된' 느낌을 준다 */
+  function buildGantry(theme, roadW, kind) {
+    const g = new T.Group();
+    const span = roadW + 90;
+    if (theme === 'rainbow') {
+      // 네온 링: 도로가 고리 안을 통과한다
+      const ringMat = new T.MeshBasicMaterial({ color: new T.Color(kind === 'start' ? '#ffd54a' : '#7ef9ff'), fog: false });
+      const ring = mesh(new T.TorusGeometry(span * 0.62, 4.5, 8, 40), ringMat);
+      ring.position.y = span * 0.42;
+      ring.rotation.y = Math.PI / 2;
+      ring.castShadow = false;
+      g.add(ring);
+      const inner = mesh(new T.TorusGeometry(span * 0.55, 1.6, 6, 40),
+        new T.MeshBasicMaterial({ color: new T.Color('#ff7ae0'), fog: false }));
+      inner.position.y = span * 0.42; inner.rotation.y = Math.PI / 2; inner.castShadow = false;
+      g.add(inner);
+    } else if (theme === 'bowser') {
+      const stone = mat('#332a24', { rough: 0.95, flat: true });
+      [-1, 1].forEach(sd => {
+        g.add(cyl(13, 17, 105, stone, 0, 52, sd * span * 0.5, 8));
+        g.add(box(34, 12, 34, stone, 0, 108, sd * span * 0.5));
+        const fire = sphere(6.5, mat('#ff8a1e', { emissive: '#ff6a10', emissiveIntensity: 3, rough: 1 }), 0, 120, sd * span * 0.5, 10);
+        fire.castShadow = false;
+        g.add(fire);
+      });
+      const beam = box(26, 22, span + 40, stone, 0, 118, 0);
+      g.add(beam);
+      for (let i = -3; i <= 3; i++) g.add(cone(7, 16, stone, 0, 136, i * span * 0.16, 5));
+    } else {
+      const steel = mat('#d8dde6', { rough: 0.4, metal: 0.6 });
+      const panel = mat(kind === 'start' ? '#e03a3a' : '#2f6fd0', { rough: 0.6 });
+      [-1, 1].forEach(sd => {
+        g.add(box(11, 92, 11, steel, 0, 46, sd * span * 0.5));
+        g.add(box(20, 6, 20, steel, 0, 4, sd * span * 0.5));
+      });
+      g.add(box(12, 10, span + 22, steel, 0, 94, 0));
+      const board = rounded(span + 10, 26, 4, 3, panel);
+      board.position.set(0, 112, 0);
+      board.rotation.x = Math.PI / 2;
+      board.rotation.y = Math.PI / 2;
+      g.add(board);
+      if (kind === 'start') {
+        const chk = global.Tex.tex(global.Tex.startGrid(), 8, 1);
+        const strip = new T.Mesh(new T.PlaneGeometry(span + 10, 12),
+          new T.MeshStandardMaterial({ map: chk, roughness: 0.7, side: T.DoubleSide }));
+        strip.position.set(0, 94, 0);
+        strip.rotation.y = Math.PI / 2;
+        g.add(strip);
+      }
+    }
+    return g;
+  }
+
+  /** 테마별 대형 배경물 세트: [{obj, x, z, y, rot, scale, anim}] */
+  function buildBackdrop(theme, world) {
+    const items = [];
+    const C = world / 2;
+    const put = (obj, x, z, y, rot, scale, anim) => {
+      obj.traverse(o => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
+      items.push({ obj, x, z, y: y || 0, rot: rot || 0, scale: scale || 1, anim: anim || null });
+    };
+    const ring = (n, r, f) => {
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2 + 0.4;
+        f(C + Math.cos(a) * r, C + Math.sin(a) * r, a, i);
+      }
+    };
+
+    if (theme === 'circuit') {
+      // 피트 빌딩
+      const pit = new T.Group();
+      const wallM = mat('#eceff4', { rough: 0.85 });
+      pit.add(box(760, 120, 130, wallM, 0, 60, 0));
+      pit.add(box(790, 16, 150, mat('#3f6fd0', { rough: 0.7 }), 0, 128, 0));
+      for (let i = -5; i <= 5; i++) {
+        pit.add(box(56, 54, 6, mat('#2a3a55', { rough: 0.3, metal: 0.4 }), i * 66, 66, 66));
+        pit.add(box(60, 8, 20, mat(i % 2 ? '#e03a3a' : '#f4d03f', { rough: 0.7 }), i * 66, 100, 70));
+      }
+      put(pit, C - 1450, C - 1750, 0, 0.15);
+
+      // 관중 타워
+      const towerTpl = new T.Group();
+      towerTpl.add(cyl(46, 54, 190, mat('#dfe4ec', { rough: 0.9 }), 0, 95, 0, 10));
+      towerTpl.add(cyl(58, 58, 14, mat('#e03a3a', { rough: 0.7 }), 0, 196, 0, 10));
+      towerTpl.add(cyl(4, 4, 60, mat('#8a94a6', { rough: 0.5, metal: 0.5 }), 0, 232, 0, 6));
+      for (let i = 0; i < 3; i++) {
+        put(towerTpl.clone(true), C - 1900 + i * 1500, C + 1900, 0, 0, 0.9 + i * 0.15);
+      }
+
+      // 원경 언덕 위 나무숲
+      // 원경 숲: 나무 70그루를 한 오브젝트로 묶어 머티리얼 단위 병합 (드로우콜 4개)
+      const treeTpl = buildProp('tree');
+      const forest = new T.Group();
+      for (let i = 0; i < 14; i++) {
+        const a = (i / 14) * Math.PI * 2 + 0.4, r = 2650;
+        for (let k = 0; k < 5; k++) {
+          const t = treeTpl.clone(true);
+          t.position.set(Math.cos(a) * r + (Math.random() - 0.5) * 320, 0,
+                         Math.sin(a) * r + (Math.random() - 0.5) * 320);
+          t.scale.setScalar(1.6 + Math.random() * 1.4);
+          t.rotation.y = Math.random() * 6.28;
+          forest.add(t);
+        }
+      }
+      put(forest, C, C, 0, 0);
+
+      // 열기구 (부유 애니메이션)
+      const balloonColors = ['#e05a5a', '#f4c542', '#4fc3ff', '#8ef2a8', '#c264ff'];
+      for (let i = 0; i < 5; i++) {
+        const b = new T.Group();
+        const cm = mat(balloonColors[i], { rough: 0.65 });
+        const env = sphere(58, cm, 0, 0, 0, 18);
+        env.scale.set(1, 1.18, 1);
+        b.add(env);
+        b.add(cone(52, 44, mat('#f4f4f4', { rough: 0.7 }), 0, -66, 0, 16));
+        b.add(box(30, 26, 30, mat('#8a6a3a', { rough: 0.9 }), 0, -104, 0));
+        const a = i / 5 * Math.PI * 2;
+        put(b, C + Math.cos(a) * 1750, C + Math.sin(a) * 1750, 620 + i * 90, 0, 1, 'float');
+      }
+    } else if (theme === 'rainbow') {
+      // 떠 있는 크리스털 섬
+      for (let i = 0; i < 16; i++) {
+        const isl = new T.Group();
+        const cm = new T.MeshPhysicalMaterial({
+          color: new T.Color('hsl(' + (i * 47 % 360) + ',70%,60%)'),
+          roughness: 0.1, metalness: 0.2, transmission: 0.35, thickness: 30,
+          emissive: new T.Color('hsl(' + (i * 47 % 360) + ',80%,40%)'), emissiveIntensity: 0.5
+        });
+        // 아래로 뾰족한 결정 덩어리 + 위로 솟은 프리즘들
+        const baseR = 60 + Math.random() * 50;
+        const core = mesh(new T.ConeGeometry(baseR, baseR * 2.2, 6), cm);
+        core.rotation.x = Math.PI;
+        core.position.y = -baseR * 0.7;
+        isl.add(core);
+        const cap = mesh(new T.IcosahedronGeometry(baseR * 0.92, 0), cm);
+        cap.scale.set(1, 0.55, 1);
+        isl.add(cap);
+        for (let k = 0; k < 4; k++) {
+          const h = 90 + Math.random() * 130;
+          const sp = mesh(new T.ConeGeometry(9 + Math.random() * 8, h, 6), cm);
+          const a2 = Math.random() * 6.28, rr = Math.random() * baseR * 0.7;
+          sp.position.set(Math.cos(a2) * rr, h * 0.42, Math.sin(a2) * rr);
+          sp.rotation.z = (Math.random() - 0.5) * 0.4;
+          sp.rotation.x = (Math.random() - 0.5) * 0.4;
+          isl.add(sp);
+        }
+        const a = Math.random() * Math.PI * 2, r = 1500 + Math.random() * 1900;
+        put(isl, C + Math.cos(a) * r, C + Math.sin(a) * r, -280 + Math.random() * 1300, Math.random() * 3, 1, 'spin');
+      }
+      // 행성 두 개 + 위성
+      [['#6a8fd8', 380, -2700, -2300, 1500], ['#d87a5a', 250, 2900, -1900, 1900]].forEach(pd => {
+        const pl = new T.Group();
+        pl.add(sphere(pd[1], mat(pd[0], { rough: 0.9, emissive: pd[0], emissiveIntensity: 0.12 }), 0, 0, 0, 26));
+        const rg = mesh(new T.RingGeometry(pd[1] * 1.4, pd[1] * 2.1, 48),
+          new T.MeshBasicMaterial({ color: new T.Color('#e8d2a8'), transparent: true, opacity: 0.4, side: T.DoubleSide }));
+        rg.rotation.x = -Math.PI / 2.3; rg.rotation.z = 0.5;
+        pl.add(rg);
+        put(pl, C + pd[2], C + pd[3], pd[4], 0, 1, 'spin');
+      });
+      // 혜성
+      const comet = new T.Group();
+      comet.add(sphere(26, new T.MeshBasicMaterial({ color: new T.Color('#ffffff') }), 0, 0, 0, 12));
+      const tail = mesh(new T.ConeGeometry(20, 420, 10),
+        new T.MeshBasicMaterial({ color: new T.Color('#9fd8ff'), transparent: true, opacity: 0.35 }));
+      tail.rotation.z = Math.PI / 2; tail.position.x = -210;
+      comet.add(tail);
+      put(comet, C + 1900, C - 2600, 1750, 0.6);
+    } else {
+      // 화산
+      for (let i = 0; i < 4; i++) {
+        const v = new T.Group();
+        const rockM = mat('#2a1a14', { rough: 1, flat: true });
+        const h = 620 + Math.random() * 420;
+        v.add(cone(520, h, rockM, 0, h / 2, 0, 9));
+        const crater = mesh(new T.CylinderGeometry(120, 90, 60, 9),
+          mat('#ff5a10', { emissive: '#ff7a10', emissiveIntensity: 2.6, rough: 1 }));
+        crater.position.y = h - 20;
+        v.add(crater);
+        const a = i / 4 * Math.PI * 2 + 0.7, r = 2500 + Math.random() * 700;
+        put(v, C + Math.cos(a) * r, C + Math.sin(a) * r, -60, a);
+      }
+      // 수호 석상 (머티리얼 공유를 위해 복제)
+      const statueTpl = buildProp('statue');
+      for (let i = 0; i < 6; i++) {
+        const st = statueTpl.clone(true);
+        st.scale.setScalar(4.2);
+        const a = i / 6 * Math.PI * 2 + 0.2, r = 1750;
+        put(st, C + Math.cos(a) * r, C + Math.sin(a) * r, 0, a + Math.PI);
+      }
+      // 성벽 실루엣 (5면을 한 오브젝트로 묶는다)
+      const wm = mat('#1e1512', { rough: 1, flat: true });
+      const glowM = mat('#ff7a1e', { emissive: '#ff5a0a', emissiveIntensity: 2.2, rough: 1 });
+      const walls = new T.Group();
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2 + 0.4, r = 2150;
+        const w = new T.Group();
+        w.add(box(900, 240, 90, wm, 0, 120, 0));
+        for (let j = -6; j <= 6; j++) w.add(box(46, 40, 100, wm, j * 68, 258, 0));
+        for (let j = -2; j <= 2; j++) w.add(box(28, 44, 12, glowM, j * 180, 140, 48));
+        w.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
+        w.rotation.y = a + Math.PI / 2;
+        walls.add(w);
+      }
+      put(walls, C, C, 0, 0);
+    }
+    return items;
+  }
+
   /** 배경 랜드마크 (성 / 요새 / 토성) */
   function buildLandmark(theme) {
     const g = new T.Group();
@@ -1052,5 +1325,5 @@
     return g;
   }
 
-  global.Models = { buildKart, optimize, buildCharacter, buildItem, buildProp, buildLandmark, mat, mesh, sphere, box, cyl, cone, rounded, starShape, torus, geo };
+  global.Models = { buildKart, optimize, buildGantry, buildBackdrop, lathe, taperBone, buildCharacter, buildItem, buildProp, buildLandmark, mat, mesh, sphere, box, cyl, cone, rounded, starShape, torus, geo };
 })(window);

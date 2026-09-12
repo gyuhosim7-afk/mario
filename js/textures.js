@@ -125,7 +125,7 @@
 
   function stone() {
     const S = 512, c = make(S, S), g = c.getContext('2d');
-    g.fillStyle = '#2e2723'; g.fillRect(0, 0, S, S);
+    g.fillStyle = '#3b332c'; g.fillRect(0, 0, S, S);
     valueNoise(g, S, S, 72, 0.26);
     valueNoise(g, S, S, 12, 0.18);
     // 석판 이음새

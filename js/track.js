@@ -10,8 +10,8 @@
 
   const D = global.GameData;
   const S = D.SURFACE;
-  const WORLD = 4096;          // 월드 한 변 크기
-  const SURF_RES = 2048;       // 서페이스 맵 해상도 (2 world unit / texel)
+  const WORLD = 5000;          // 월드 한 변 크기
+  const SURF_RES = 2500;       // 서페이스 맵 해상도 (2 world unit / texel)
   const NODE_GAP = 9;          // 중심선 노드 간격 (world unit)
   const CTRL_GAP = 45;         // 레이아웃 트레이싱 간격
   const GRID = 128;            // 최근접 노드 조회 시드 그리드
@@ -195,6 +195,9 @@
         return out.sort((a, b) => a - b);
       };
       this.boostSpots = pickSpread(this.def.boostCount || 3, 0.16, true);
+      // 도로를 가로지르는 게이트: 스타트 라인 + 직선 구간 2~3곳
+      this.gantrySpots = [0].concat(
+        pickSpread(3, 0.24, true).filter(i => Math.min(i, N - i) > N * 0.12));
       // 아이템 박스: 균등 t 위치를 근처 직선 구간으로 스냅
       const rows = this.def.boxRows || 4;
       this.boxSpots = [];
@@ -324,8 +327,8 @@
       this.thwomps = [];
       if (this.def.hazard === 'thwomp') {
         const spots = [];
-        for (let r = 0; r < 5; r++) {
-          const base = Math.round(((r + 0.35) / 5) * N);
+        for (let r = 0; r < 4; r++) {
+          const base = Math.round(((r + 0.4) / 4) * N);
           let best = base, bs = Infinity;
           for (let k = -Math.round(N * 0.04); k <= Math.round(N * 0.04); k++) {
             const i = (base + k + N) % N;
