@@ -20,6 +20,9 @@
       this.fov = 62;
       this.shake = 0;
       this.lookAhead = 60;
+      this.roll = 0; this._vr = 0;
+      this.dip = 0; this._vd = 0;
+      this._prevZ = 0;
     }
     reset(k) {
       this.yaw = k.angle;
@@ -51,6 +54,16 @@
       this.x += (tx - this.x) * Math.min(1, dt * 14);
       this.y += (ty - this.y) * Math.min(1, dt * 14);
 
+      // 코너에서 카메라도 살짝 기운다 + 착지 시 아래로 꿀렁
+      const st = (k.input && k.input.steer) || 0;
+      const tRoll = -st * 0.055 - (k.drifting ? k.driftDir * 0.035 : 0);
+      const ra = (tRoll - this.roll) * 45 - this._vr * 9;
+      this._vr += ra * dt; this.roll += this._vr * dt;
+      if (this._prevZ > 2.5 && k.z <= 0.5) this._vd -= 36;
+      this._prevZ = k.z;
+      const da = (0 - this.dip) * 80 - this._vd * 11;
+      this._vd += da * dt; this.dip += this._vd * dt;
+
       this.shake = Math.max(this.shake, k.shake);
       this.shake = Math.max(0, this.shake - dt * 2.1);
       this.apply(k);
@@ -58,13 +71,14 @@
     apply(k) {
       const s = this.shake * this.shake * 7;
       const sx = (Math.random() - 0.5) * s, sy = (Math.random() - 0.5) * s, sz = (Math.random() - 0.5) * s;
-      this.cam.position.set(this.x + sx, this.h + sy, this.y + sz);
+      this.cam.position.set(this.x + sx, this.h + sy + Math.max(-6, Math.min(6, this.dip)), this.y + sz);
       const la = this.lookAhead;
       this.cam.lookAt(
         k.x + Math.cos(k.angle) * la * 0.35 + sx,
         21 + k.z * 0.85 + sy,
         k.y + Math.sin(k.angle) * la * 0.35 + sz
       );
+      if (this.roll) this.cam.rotateZ(this.roll);
       if (Math.abs(this.cam.fov - this.fov) > 0.01) {
         this.cam.fov = this.fov;
         this.cam.updateProjectionMatrix();
@@ -702,11 +716,13 @@
       // 스핀아웃 / 넉백 회전
       m.rotation.y = k.state === 'SPINOUT' ? k.spinAngle : (k.state === 'KNOCKBACK' ? k.spinAngle : 0);
       m.rotation.z = k.state === 'KNOCKBACK' ? Math.sin(k.spinAngle * 0.7) * 0.6 : 0;
-      // 드리프트 기울기 + 서스펜션
-      const lean = k.drifting ? k.driftDir * 0.16 : -(k.input.steer || 0) * 0.05;
-      m.rotation.x = m.rotation.x + ((k.airborne ? -0.2 : lean) - m.rotation.x) * Math.min(1, dt * 8);
+      // 차체 피치/롤/히브는 Rig 의 서스펜션이 담당한다. 여기서는 홉만.
       const hop = k.hopT > 0 ? Math.sin((0.26 - k.hopT) / 0.26 * Math.PI) * 6 : 0;
       m.position.y = hop;
+      if (!m.userData.rig) {
+        const lean = k.drifting ? k.driftDir * 0.16 : -(k.input.steer || 0) * 0.05;
+        m.rotation.x += ((k.airborne ? -0.2 : lean) - m.rotation.x) * Math.min(1, dt * 8);
+      }
 
       // 드라이버 착좌 리그 (팔 IK · 상체 롤 · 머리) — 멀리 있는 카트는 생략
       if (global.Rig && m.userData.rig && camD < 700) global.Rig.update(m, k, dt, this.time);

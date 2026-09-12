@@ -331,7 +331,10 @@
       } else if (inp.throttle < 0) {
         this.speed -= ph.brakeForce * 0.85 * dt;
       } else {
-        this.speed -= 170 * dt;
+        // 입력이 없으면 0 까지만 감속한다 (평지에서 뒤로 밀리지 않게)
+        const drag = 170 * dt;
+        this.speed = this.speed > 0 ? Math.max(0, this.speed - drag)
+                                    : Math.min(0, this.speed + drag);
       }
       if (this.speed > maxSpeed) this.speed -= (this.speed - maxSpeed) * Math.min(1, dt * 3.2);
       this.speed = Math.max(-120, this.speed);

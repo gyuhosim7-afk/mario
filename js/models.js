@@ -165,6 +165,19 @@
     return m;
   }
 
+  /** 관성으로 흔들리는 부위(귀·꼬리·스카프·안테나)용 스프링 관절 */
+  function wobbleJoint(parent, x, y, z, cfg, list) {
+    const j = joint(x, y, z, 'wobble');
+    j.userData.joint = true;
+    parent.add(j);
+    list.push({
+      node: j, ax: 0, az: 0, vx: 0, vz: 0,
+      gx: cfg.gx || 0, gz: cfg.gz || 0,
+      stiff: cfg.stiff || 70, damp: cfg.damp || 9, max: cfg.max || 0.55
+    });
+    return j;
+  }
+
   function buildCharacter(ch) {
     // assets/manifest.json 에 등록된 외부 모델이 있으면 그걸 쓴다
     const ext = global.Assets && global.Assets.character(ch.id);
@@ -197,6 +210,7 @@
     const thighLen = 7.6 * S, shinLen = 7.0 * S;
 
     const root = new T.Group();
+    const wobblers = [];      // 관성으로 따라 흔들리는 부위
 
     /* ---------- 골반 ---------- */
     const pelvis = joint(0, pelvisY, 0, 'pelvis');
@@ -347,10 +361,14 @@
         });
         const sc = torus(3.3 * S, 1.4 * S, trim, 0, B(neckY - chestY - 0.6 * S), 0);
         sc.rotation.x = Math.PI / 2; torso.add(sc);
-        torso.add(limb(-2 * S, B(neckY - chestY - 1.4 * S), 1.4 * S, -8 * S, B(neckY - chestY + 2.0 * S), 4.6 * S, 1.3 * S, trim));
+        const scarfJ = wobbleJoint(torso, -2 * S, B(neckY - chestY - 1.4 * S), 1.4 * S,
+          { gx: 0.055, gz: 0.9, stiff: 55, damp: 7, max: 0.8 }, wobblers);
+        scarfJ.add(limb(0, 0, 0, -6 * S, 3.4 * S, 3.2 * S, 1.3 * S, trim));
+        const tailJ = wobbleJoint(torso, -torsoR * 0.9, B(0.6 * S), 0,
+          { gx: 0.04, gz: 0.6, stiff: 75, damp: 8, max: 0.5 }, wobblers);
         [-1, 0, 1].forEach(i => {
-          const f = cone(1.5 * S, 5.2 * S, accent, -torsoR * 0.9, B(0.6 * S + i * 1.4 * S), i * 2.2 * S, 6);
-          f.rotation.z = 1.9; f.rotation.x = i * 0.24; torso.add(f);
+          const f = cone(1.5 * S, 5.2 * S, accent, 0, i * 1.4 * S, i * 2.2 * S, 6);
+          f.rotation.z = 1.9; f.rotation.x = i * 0.24; tailJ.add(f);
         });
         [-1, 1].forEach(sd => {
           const w = sphere(3.1 * S, accent, -0.6 * S, B(0.2 * S), sd * (torsoR + 0.6 * S), 10);
@@ -360,8 +378,10 @@
       }
       case 'momo': {
         [-1, 1].forEach(sd => {
-          headJ.add(limb(sd * headR * 0.34, H(headR * 0.7), 0, sd * headR * 0.95, H(headR * 2.5), -headR * 0.75, 1.55 * S, body));
-          headJ.add(limb(sd * headR * 0.34, H(headR * 0.78), 0.5 * S, sd * headR * 0.9, H(headR * 2.35), -headR * 0.45, 0.85 * S, detail));
+          const earJ = wobbleJoint(headJ, sd * headR * 0.34, H(headR * 0.7), 0,
+            { gx: 0.05, gz: 1.1, stiff: 48, damp: 6.5, max: 0.85 }, wobblers);
+          earJ.add(limb(0, 0, 0, sd * headR * 0.6, headR * 1.8, -headR * 0.75, 1.55 * S, body));
+          earJ.add(limb(0, 0.1 * S, 0.5 * S, sd * headR * 0.56, headR * 1.65, -headR * 0.45, 0.85 * S, detail));
         });
         headJ.add(sphere(1.15 * S, detail, front * 0.98, H(-headR * 0.2), 0, 10));
         [-1, 1].forEach(sd => {
@@ -380,9 +400,11 @@
         const glow = rounded(3.4 * S, 1.4 * S, 5.8 * S, 0.5 * S, emissiveMat(c.detail, c.detail, 3.4));
         glow.position.set(front * 0.86, H(headR * 0.10), 0); glow.rotation.x = Math.PI / 2;
         glow.castShadow = false; headJ.add(glow);
-        headJ.add(cyl(0.35 * S, 0.35 * S, 5.4 * S, trim, -1.2 * S, H(headR * 1.3), 0, 6));
-        const bulb = sphere(1.15 * S, emissiveMat(c.accent, c.detail, 3.4), -1.2 * S, H(headR * 1.3 + 3 * S), 0, 10);
-        bulb.castShadow = false; headJ.add(bulb);
+        const antJ = wobbleJoint(headJ, -1.2 * S, H(headR * 0.9), 0,
+          { gx: 0.07, gz: 1.4, stiff: 40, damp: 5.5, max: 0.9 }, wobblers);
+        antJ.add(cyl(0.35 * S, 0.35 * S, 5.4 * S, trim, 0, 3.1 * S, 0, 6));
+        const bulb = sphere(1.15 * S, emissiveMat(c.accent, c.detail, 3.4), 0, 6.2 * S, 0, 10);
+        bulb.castShadow = false; antJ.add(bulb);
         const panel = rounded(5.2 * S, 4.4 * S, 1.4 * S, 0.6 * S, mat(c.trim, { rough: 0.3, metal: 0.7 }));
         panel.position.set(torsoR * 0.82, B(-0.4 * S), 0); panel.rotation.z = Math.PI / 2;
         torso.add(panel);
@@ -404,7 +426,9 @@
           const sp = cone(1.5 * S - i * 0.22 * S, 4.6 * S - i * 0.7 * S, detail, -torsoR * 0.72, B(2.4 * S - i * 3.0 * S), 0, 6);
           sp.rotation.z = 0.55; torso.add(sp);
         });
-        pelvis.add(limb(-torsoR * 0.9, 1.6 * S, 0, -torsoR * 2.6, 0.2 * S, 0, 1.9 * S, body));
+        const kokoTail = wobbleJoint(pelvis, -torsoR * 0.9, 1.6 * S, 0,
+          { gx: 0.045, gz: 0.8, stiff: 60, damp: 7.5, max: 0.6 }, wobblers);
+        kokoTail.add(limb(0, 0, 0, -torsoR * 1.7, -1.4 * S, 0, 1.9 * S, body));
         break;
       }
       case 'tango': {
@@ -420,8 +444,10 @@
         snout.rotation.z = Math.PI / 2; headJ.add(snout);
         headJ.add(sphere(2.0 * S, detail, front * 1.28, H(-headR * 0.3), 0, 10));
         headJ.add(sphere(0.95 * S, dark, front * 1.5, H(-headR * 0.22), 0, 8));
+        const foxTail = wobbleJoint(pelvis, -torsoR * 1.0, 1.2 * S, 0,
+          { gx: 0.05, gz: 1.0, stiff: 45, damp: 6, max: 0.8 }, wobblers);
         for (let i = 0; i < 4; i++) {
-          pelvis.add(sphere((3.2 - i * 0.5) * S, i === 3 ? white : accent, -torsoR * (1.0 + i * 0.62), 1.2 * S + i * 1.5 * S, 0, 10));
+          foxTail.add(sphere((3.2 - i * 0.5) * S, i === 3 ? white : accent, -torsoR * i * 0.62, i * 1.5 * S, 0, 10));
         }
         break;
       }
@@ -444,8 +470,10 @@
         });
         const sc = torus(3.4 * S, 1.3 * S, trim, 0, B(neckY - chestY - 0.8 * S), 0);
         sc.rotation.x = Math.PI / 2; torso.add(sc);
+        const catTail = wobbleJoint(pelvis, -torsoR * 1.1, 1.2 * S, 0,
+          { gx: 0.06, gz: 1.2, stiff: 42, damp: 5.8, max: 0.9 }, wobblers);
         for (let i = 0; i < 4; i++) {
-          pelvis.add(sphere((1.9 - i * 0.22) * S, body, -torsoR * 1.1 - Math.sin(i * 0.5) * 1.4 * S, 1.2 * S + i * 3.0 * S, 0, 9));
+          catTail.add(sphere((1.9 - i * 0.22) * S, body, -Math.sin(i * 0.5) * 1.4 * S, i * 3.0 * S, 0, 9));
         }
         break;
       }
@@ -501,7 +529,7 @@
 
     root.userData.scaleClass = S;
     root.userData.rig = {
-      pelvis, torso, head: headJ, arms, legs,
+      pelvis, torso, head: headJ, arms, legs, wobblers,
       restTorso: { x: 0, z: 0 }, S,
       shoulderLocal: arms.map(a => a.shoulder.position.clone())
     };
@@ -695,6 +723,18 @@
       pedal.rotation.z = 0.35;
       g.add(pedal);
     });
+
+    /* 서스펜션: 바퀴는 지면에 남기고 차체만 피치/롤 하도록 분리 */
+    const bodyNode = new T.Object3D();
+    bodyNode.userData.joint = true;
+    bodyNode.name = 'body';
+    const wheelSet = new Set(wheels);
+    for (const child of g.children.slice()) {
+      if (!wheelSet.has(child)) bodyNode.add(child);
+    }
+    g.add(bodyNode);
+    g.userData.body = bodyNode;
+    wheels.forEach(w => { w.userData.baseY = w.position.y; });
 
     g.userData.dims = { L, W, wr };
     optimize(g);
