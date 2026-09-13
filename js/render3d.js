@@ -814,6 +814,17 @@
       if (this._envRT) { this._envRT.dispose(); this._envRT = null; }
       this._envRT = global.Surface ? global.Surface.envMap(this.gl, theme, skyTex) : null;
       this.scene.environment = this._envRT ? this._envRT.texture : null;
+
+      // manifest 에 실제 HDRI 가 등록돼 있으면 그쪽을 우선한다 (비동기, 실패해도 무시)
+      const man = global.Assets && global.Assets.manifest;
+      const envDef = man && man.env;
+      const file = envDef && (typeof envDef === 'string' ? envDef : (envDef[theme] || envDef.default));
+      if (!file || !global.Surface) return;
+      const url = (global.Assets.base || 'assets/') + file;
+      const want = theme;
+      global.Surface.hdriMap(this.gl, url).then(rt => {
+        if (rt && this.theme === want) this.scene.environment = rt.texture;
+      });
     }
 
     /* ============ 투사체 ============ */

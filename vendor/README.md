@@ -8,6 +8,9 @@ UnrealBloomPass / OutputPass / ShaderPass / SMAAPass, BufferGeometryUtils)을 es
 
 * 출처: npm `three@0.186.0`
 * 라이선스: MIT (`three.LICENSE`)
+* `--define:import.meta.url` 이 필요한 이유: DRACOLoader 가 최상위에서
+  `new URL('...', import.meta.url)` 을 부르는데, IIFE 번들에는 `import.meta` 가
+  없어서 이게 없으면 번들 전체가 로드 시점에 터진다
 * 재생성 방법:
 
 ```
@@ -21,8 +24,14 @@ export { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 export { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 export { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
 export * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+export { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+export { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+export { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
+export { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
+export { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 JS
 npx esbuild entry.js --bundle --minify --format=iife --global-name=THREE \
+  --define:import.meta.url='"https://vendor.local/three.bundle.js"' \
   --outfile=three.bundle.js --legal-comments=none
 ```
 

@@ -169,5 +169,33 @@ float sdFbm(vec3 p) {
     }
   }
 
-  global.Surface = { detail, envMap, quality, register };
+  /* -------------------------------------------------------------
+   * 실제 HDRI 환경맵 (선택)
+   *
+   * assets/manifest.json 의 "env" 에 .hdr 파일을 적어두면 절차적 환경맵 대신
+   * 그걸 굽는다. 실제 촬영된 HDRI 는 반사에 들어가는 정보량이 비교가 안 되게
+   * 많아서, 같은 모델도 훨씬 입체적으로 보인다. 없으면 조용히 무시한다.
+   * ----------------------------------------------------------- */
+  const _hdri = {};
+
+  function hdriMap(gl, url) {
+    const T = global.THREE;
+    if (_hdri[url] !== undefined) return Promise.resolve(_hdri[url]);
+    if (!T.RGBELoader) { _hdri[url] = null; return Promise.resolve(null); }
+    return new Promise((res) => {
+      new T.RGBELoader().load(url, (tex) => {
+        let rt = null;
+        try {
+          const pm = new T.PMREMGenerator(gl);
+          rt = pm.fromEquirectangular(tex);
+          pm.dispose();
+        } catch (e) { rt = null; }
+        tex.dispose();
+        _hdri[url] = rt;
+        res(rt);
+      }, undefined, () => { _hdri[url] = null; res(null); });
+    });
+  }
+
+  global.Surface = { detail, envMap, quality, register, hdriMap };
 })(window);

@@ -1,8 +1,20 @@
 {
+  "env": {
+    "default": "env/studio.hdr",
+    "circuit": "env/sunny.hdr",
+    "bowser": "env/volcano.hdr"
+  },
   "characters": {
-    "koko": { "file": "characters/koko.glb", "height": 34, "yaw": 90 }
+    "koko": {
+      "file": "characters/koko.glb",
+      "height": 34,
+      "yaw": 90
+    }
   },
   "props": {
-    "tree": { "file": "props/tree.glb", "height": 90 }
+    "tree": {
+      "file": "props/tree.glb",
+      "height": 90
+    }
   }
 }
