@@ -485,8 +485,11 @@
         const horn2 = cone(1.5 * S, 4.2 * S, trim, front * 0.62, H(headR * 0.66), 0, 8);
         horn2.rotation.z = -0.85; headJ.add(horn2);
         [-1, 1].forEach(sd => {
-          const ear = sphere(1.6 * S, body, -headR * 0.55, H(headR * 0.78), sd * headR * 0.72, 8);
-          ear.scale.set(0.45, 1.35, 0.75); ear.rotation.x = sd * 0.3; headJ.add(ear);
+          // 코뿔소 귀도 관성으로 펄럭이게 (중량급도 2차 모션이 있어야 뻣뻣해 보이지 않는다)
+          const earJ = wobbleJoint(headJ, -headR * 0.55, H(headR * 0.62), sd * headR * 0.72,
+            { gx: 0.035, gz: 0.7, stiff: 66, damp: 8, max: 0.5 }, wobblers);
+          const ear = sphere(1.6 * S, body, 0, 1.5 * S, 0, 8);
+          ear.scale.set(0.45, 1.35, 0.75); ear.rotation.x = sd * 0.3; earJ.add(ear);
           const pl = rounded(6.4 * S, 4.6 * S, 3.4 * S, 1.2 * S, mat(c.accent, { rough: 0.55, metal: 0.45 }));
           pl.position.set(0.2 * S, shoY + 1.2 * S, sd * (shZ + 0.9 * S)); pl.rotation.z = sd * 0.12;
           torso.add(pl);
@@ -523,6 +526,15 @@
         const jaw = rounded(5.2 * S, 2.4 * S, 6.6 * S, 0.8 * S, mat(c.belly, { rough: 0.95, flat: true }));
         jaw.position.set(front * 0.5, H(-headR * 0.62), 0); jaw.rotation.x = Math.PI / 2;
         headJ.add(jaw);
+        // 정수리 불꽃 갈기 - 속도가 붙으면 뒤로 흩날린다
+        const flameJ = wobbleJoint(headJ, -headR * 0.42, H(headR * 0.78), 0,
+          { gx: 0.062, gz: 1.15, stiff: 46, damp: 6, max: 0.9 }, wobblers);
+        [[0, 0, 3.2, 1.5], [-1.3 * S, 1.1 * S, 2.4, 1.1], [1.2 * S, 0.7 * S, 2.0, 0.9]]
+          .forEach((f, i) => {
+            const fl = cone(f[3] * S, f[2] * S, emissiveMat(i ? c.detail : c.accent, c.detail, 3.0),
+              f[0], f[1] + f[2] * 0.5 * S, 0, 6);
+            fl.rotation.z = 0.2 + i * 0.1; fl.castShadow = false; flameJ.add(fl);
+          });
         break;
       }
     }

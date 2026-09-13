@@ -14,7 +14,8 @@
   const _n = new T.Vector3(), _u = new T.Vector3();
   const _sh = new T.Vector3(), _elbow = new T.Vector3(), _grip = new T.Vector3();
   const _pole = new T.Vector3(), _dir = new T.Vector3(), _local = new T.Vector3();
-  const _q = new T.Quaternion(), _pq = new T.Quaternion();
+  const _q = new T.Quaternion(), _pq = new T.Quaternion(), _q2 = new T.Quaternion();
+  const _e = new T.Euler();
 
   const clamp = (v, a, b) => (v < a ? a : (v > b ? b : v));
 
@@ -62,16 +63,27 @@
       if (!rig || dt <= 0) return;
 
       const hurt = k.state === 'SPINOUT' || k.state === 'KNOCKBACK';
-      const st = k.input ? (k.input.steer || 0) : 0;
-      const steerAng = st * 0.55 + (k.drifting ? k.driftDir * 0.32 : 0);
+      const stRaw = k.input ? (k.input.steer || 0) : 0;
       const sr = clamp(k.speedRatio || 0, 0, 1.2);
-      const lerp = Math.min(1, dt * 9);
 
       // 상태 저장소
       const S = rig._s || (rig._s = {
         pitch: 0, vp: 0, roll: 0, vr: 0, heave: 0, vh: 0,
-        headY: 0, vhy: 0, prevSpeed: 0, prevZ: 0, acc: 0
+        tp: 0, vtp: 0, tr: 0, vtr: 0, bob: 0, vbob: 0,
+        headY: 0, vhy: 0, nod: 0, vnod: 0, tilt: 0, vtilt: 0,
+        st: 0, vst: 0, prevSpeed: 0, prevZ: 0, acc: 0, hurtT: 0, mix: 0
       });
+
+      /* ---- 입력/피격 상태를 먼저 부드럽게 만든다 (스냅 방지) ---- */
+      // 조향은 입력이 계단식(-1/0/1)이라 스프링으로 흘려보내야 손이 튀지 않는다
+      spring(S, 'st', 'vst', stRaw, 150, 21, dt);
+      const st = clamp(S.st, -1.15, 1.15);
+      const steerAng = st * 0.55 + (k.drifting ? k.driftDir * 0.32 : 0);
+      S.hurtT = hurt ? S.hurtT + dt : 0;
+      S.mix += ((hurt ? 1 : 0) - S.mix) * Math.min(1, dt * (hurt ? 16 : 5));
+      const mix = S.mix;
+      // 피격 몸부림은 시간이 지날수록 잦아든다 (등속 진동은 기계처럼 보인다)
+      const fade = Math.exp(-S.hurtT * 1.25);
 
       /* ---- 가속도 추정 (저역 통과로 노이즈 제거) ---- */
       const rawAcc = (k.speed - S.prevSpeed) / dt;
@@ -80,8 +92,9 @@
       const latF = (k.vlat || 0) * 0.006 + st * sr * 0.55;
 
       /* ---- 차체 서스펜션 ---- */
+      const landed = S.prevZ > 2.5 && k.z <= 0.5;
       if (bodyNode) {
-        if (S.prevZ > 2.5 && k.z <= 0.5) S.vh -= 52;      // 착지 충격
+        if (landed) S.vh -= 52;                          // 착지 충격
         S.prevZ = k.z;
         const tPitch = clamp(-S.acc * 0.00042, -0.10, 0.10) + (k.boostTimer > 0 ? -0.035 : 0);
         const tRoll = clamp(-latF * 0.10, -0.14, 0.14) + (k.drifting ? k.driftDir * 0.09 : 0);
@@ -99,40 +112,70 @@
             w.position.y = (w.userData.baseY || w.position.y) - S.pitch * f * 9 - S.heave * 0.45;
           }
         }
+      } else {
+        S.prevZ = k.z;
       }
 
-      /* ---- 상체 ---- */
-      let roll = -steerAng * 0.30;
-      let pitch = 0.09 + sr * 0.12;
-      if (k.boostTimer > 0) pitch += 0.09;
-      if (k.input && k.input.brake) pitch -= 0.15;
-      if (hurt) { roll = Math.sin(time * 22) * 0.5; pitch = -0.3; }
-      rig.torso.rotation.z += (pitch - rig.torso.rotation.z) * lerp;
-      rig.torso.rotation.x += (roll - rig.torso.rotation.x) * lerp;
+      /* ---- 상체: 속도로 웅크리고, 가감속 관성으로 젖혀지고, 코너 안쪽으로 기운다 ---- */
+      // +z 는 뒤로 젖힘 / -z 는 앞으로 숙임, +x 는 카트 오른쪽으로 기움
+      let pitch = 0.10 - sr * 0.15 + clamp(S.acc * 0.00050, -0.15, 0.15);
+      if (k.boostTimer > 0) pitch -= 0.08;
+      let roll = steerAng * 0.34;
+      if (mix > 0.002) {
+        const fr = 0.14 + Math.sin(S.hurtT * 7.4) * 0.60 * fade;
+        const fp = -0.30 - Math.sin(S.hurtT * 5.1 + 0.8) * 0.30 * fade;
+        roll += (fr - roll) * mix;
+        pitch += (fp - pitch) * mix;
+      }
+      // 스프링으로 받아 살짝 오버슈트시킨다 (선형 보간은 로봇처럼 보인다)
+      spring(S, 'tp', 'vtp', pitch, 88, 13, dt);
+      spring(S, 'tr', 'vtr', roll, 96, 14, dt);
+      rig.torso.rotation.z = S.tp;
+      rig.torso.rotation.x = S.tr;
 
-      // 정차 중 숨쉬기 + 넉백 들썩임
+      // 정차 중 숨쉬기 · 착지 충격 흡수 · 넉백 들썩임
       if (rig.torso.userData.baseY === undefined) rig.torso.userData.baseY = rig.torso.position.y;
-      const hop = k.state === 'KNOCKBACK' ? Math.sin(time * 18) * 1.8 : 0;
-      const breath = Math.abs(k.speed) < 40 && !hurt ? Math.sin(time * 2.2) * 0.35 : 0;
-      rig.torso.position.y = rig.torso.userData.baseY + hop + breath;
+      if (landed) S.vbob -= 24;                          // 상체는 차체보다 늦게 주저앉는다
+      spring(S, 'bob', 'vbob', 0, 92, 11, dt);
+      const idle = clamp(1 - Math.abs(k.speed) / 70, 0, 1) * (1 - mix);
+      const breath = Math.sin(time * 1.9) * 0.55 * idle;
+      const hop = k.state === 'KNOCKBACK' ? Math.sin(S.hurtT * 11) * 1.6 * fade : 0;
+      rig.torso.position.y = rig.torso.userData.baseY + hop + breath + clamp(S.bob, -3, 3);
 
-      /* ---- 머리: 스프링으로 코너 안쪽을 늦게 따라본다 ---- */
-      const lookT = hurt ? Math.sin(time * 17) * 0.6 : -steerAng * 0.55;
-      spring(S, 'headY', 'vhy', lookT, 90, 12, dt);
+      /* ---- 머리: 코너 안쪽을 늦게 따라보고, 시선은 수평을 유지한다 ---- */
+      let lookT = -steerAng * 0.60;
+      if (mix > 0.002) lookT += (Math.sin(S.hurtT * 6.3) * 0.75 * fade - lookT) * mix;
+      spring(S, 'headY', 'vhy', lookT, 78, 12, dt);
       rig.head.rotation.y = S.headY;
-      const bob = Math.sin(time * 13 + k.id * 1.7) * 0.03 * (0.3 + sr);
-      rig.head.rotation.z += ((hurt ? -0.4 : bob) - rig.head.rotation.z) * lerp;
+
+      // 노면 진동은 두 개의 느린 사인을 겹쳐 규칙성을 없앤다 (단일 고주파는 떨림으로 보인다)
+      const jit = (Math.sin(time * 5.9 + k.id * 1.7) + 0.45 * Math.sin(time * 9.3 + k.id * 2.9))
+                  * 0.016 * (0.2 + sr);
+      let nod = jit - S.tp * 0.45 + Math.sin(time * 1.9 - 0.7) * 0.035 * idle;
+      if (mix > 0.002) nod += (-0.34 - Math.sin(S.hurtT * 8.1) * 0.22 * fade - nod) * mix;
+      spring(S, 'nod', 'vnod', nod, 120, 15, dt);
+      rig.head.rotation.z = S.nod;
+      // 목도 코너 쪽으로 살짝 기운다
+      spring(S, 'tilt', 'vtilt', steerAng * 0.14 * (1 - mix), 90, 13, dt);
+      rig.head.rotation.x = S.tilt;
 
       /* ---- 2차 모션: 귀 / 꼬리 / 스카프 / 안테나 ---- */
       if (rig.wobblers && rig.wobblers.length) {
-        const along = clamp(-S.acc * 0.0012, -1.6, 1.6);      // 가속하면 뒤로 젖혀짐
-        const side = clamp(-latF * 0.9, -1.6, 1.6);
-        const windBack = sr * 0.5;                            // 주행풍
+        const along = clamp(-S.acc * 0.0011, -1.3, 1.3);   // 가속 관성 (뒤로)
+        const wind = -(sr * sr) * 1.9;                     // 주행풍은 언제나 뒤로 눕힌다
+        const side = clamp(-latF * 0.95, -1.6, 1.6);
+        const flut = sr * sr * 0.16;                       // 고속 펄럭임
         for (const w of rig.wobblers) {
-          const tf = clamp((along + windBack) * w.gx * 12, -w.max, w.max);
-          const ts = clamp(side * w.gz * 0.5, -w.max, w.max);
-          spring(w, 'ax', 'vx', hurt ? Math.sin(time * 15) * 0.4 : tf, w.stiff, w.damp, dt);
-          spring(w, 'az', 'vz', hurt ? Math.cos(time * 13) * 0.4 : ts, w.stiff, w.damp, dt);
+          if (w.ph === undefined) w.ph = (w.gz * 7.3 + w.stiff * 0.13) % 6.283;
+          const g = w.gx * 12;
+          let tf = (along + wind) * g + Math.sin(time * 8.4 + w.ph) * flut;
+          let ts = side * w.gz * 0.5 + Math.sin(time * 6.7 + w.ph * 1.7) * flut * 0.7;
+          if (mix > 0.002) {
+            tf += (Math.sin(S.hurtT * 8.6 + w.ph) * 0.55 * fade - tf) * mix;
+            ts += (Math.cos(S.hurtT * 6.9 + w.ph) * 0.55 * fade - ts) * mix;
+          }
+          spring(w, 'ax', 'vx', clamp(tf, -w.max, w.max), w.stiff, w.damp, dt);
+          spring(w, 'az', 'vz', clamp(ts, -w.max, w.max), w.stiff, w.damp, dt);
           w.node.rotation.z = w.ax;      // 앞뒤로 눕기
           w.node.rotation.x = w.az;      // 좌우로 흔들리기
         }
@@ -144,12 +187,6 @@
         // 이번 프레임에 바뀐 차체/상체 회전을 반영한 뒤 IK 를 푼다
         kartModel.updateMatrixWorld(true);
         for (const arm of rig.arms) {
-          if (hurt) {
-            arm.upper.rotation.set(-2.0 + Math.sin(time * 15) * 0.4, 0,
-              arm.side * 0.4 + Math.sin(time * 19 + arm.side) * 0.5);
-            arm.fore.rotation.set(0, 0, -0.5);
-            continue;
-          }
           // 휠 토러스는 rotation.y=π/2 로 세워져 로컬 +X 가 월드 -Z 에 대응한다
           const R = 3.5;
           _grip.set(arm.side > 0 ? -R : R, 0, 0);
@@ -161,9 +198,21 @@
           solveTwoBone(_sh, _grip, arm.a, arm.b, _pole, _elbow);
 
           aimY(arm.upper, _sh, _elbow, arm.shoulder);
+          if (mix > 0.002) {
+            // 피격 시엔 만세 자세로 흔들리되, IK 자세와 섞어 팝을 없앤다
+            _e.set(-1.9 + Math.sin(S.hurtT * 7.7) * 0.45 * fade, 0,
+                   arm.side * 0.4 + Math.sin(S.hurtT * 6.2 + arm.side) * 0.55 * fade);
+            _q2.setFromEuler(_e);
+            arm.upper.quaternion.slerp(_q2, mix);
+          }
           arm.upper.updateMatrixWorld(true);
           arm.elbow.updateMatrixWorld(true);
           aimY(arm.fore, _elbow, _grip, arm.elbow);
+          if (mix > 0.002) {
+            _e.set(0, 0, -0.5);
+            _q2.setFromEuler(_e);
+            arm.fore.quaternion.slerp(_q2, mix);
+          }
         }
       }
     }

@@ -121,9 +121,10 @@
     spinOut() {
       if (this.invincible || this.finished) return false;
       this.state = STATE.SPINOUT;
-      this.stateTimer = 1.5;
+      this.stateTimer = this.spinDur = 1.5;
       this.spinAngle = 0;
-      this.speed = 0;              // 전진 추진력 즉시 0
+      // 추진력은 끊되 관성까지 한 프레임에 죽이면 벽에 박은 것처럼 보인다.
+      // 0.3초 남짓 미끄러지며 멈추게 한다.
       this.vlat = 0;
       this._cancelDrift();
       this.shake = 0.55;
@@ -226,8 +227,11 @@
       switch (this.state) {
         case STATE.SPINOUT: {
           this.stateTimer -= dt;
-          this.spinAngle += (Math.PI * 4 / 1.5) * dt;      // 1.5초에 720도
-          this.speed = 0;
+          // 720도를 등속으로 돌리면 기계처럼 보인다. 처음에 빠르고 뒤로 갈수록 느려진다
+          const su = Math.max(0, Math.min(1, 1 - this.stateTimer / (this.spinDur || 1.5)));
+          this.spinAngle = Math.PI * 4 * (1 - Math.pow(1 - su, 2.2));
+          this.speed *= Math.max(0, 1 - dt * 11);
+          if (Math.abs(this.speed) < 4) this.speed = 0;
           if (this.stateTimer <= 0) { this.state = STATE.NORMAL; this.spinAngle = 0; }
           this._integrate(dt, world);
           return;
@@ -260,10 +264,15 @@
           this.stateTimer -= dt;
           const nd = this.track.nodeAt(this._prevNode);
           const t = 1 - Math.max(0, this.stateTimer) / 1.4;
-          this.z = Math.max(0, 220 * (1 - t));
+          // 등속 하강은 엘리베이터처럼 보인다. 처음엔 빠르게 내려오다 바닥에서 살며시 멈춘다
+          this.z = Math.max(0, 220 * Math.pow(1 - t, 1.7));
           this.x += (nd.x - this.x) * Math.min(1, dt * 6);
           this.y += (nd.y - this.y) * Math.min(1, dt * 6);
-          this.angle = Math.atan2(nd.dy, nd.dx);
+          // 매달린 채 방향도 서서히 돌아간다 (즉시 스냅하면 순간이동처럼 보인다)
+          let da = Math.atan2(nd.dy, nd.dx) - this.angle;
+          while (da > Math.PI) da -= Math.PI * 2;
+          while (da < -Math.PI) da += Math.PI * 2;
+          this.angle += da * Math.min(1, dt * 7);
           if (this.stateTimer <= 0) {
             this.state = STATE.NORMAL; this.z = 0; this.speed = 0;
             this.invulnTimer = 1.2;

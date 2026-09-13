@@ -23,6 +23,7 @@
       this.roll = 0; this._vr = 0;
       this.dip = 0; this._vd = 0;
       this._prevZ = 0;
+      this._t = 0;
     }
     reset(k) {
       this.yaw = k.angle;
@@ -64,21 +65,30 @@
       const da = (0 - this.dip) * 80 - this._vd * 11;
       this._vd += da * dt; this.dip += this._vd * dt;
 
+      this._t += dt;
       this.shake = Math.max(this.shake, k.shake);
       this.shake = Math.max(0, this.shake - dt * 2.1);
       this.apply(k);
     }
     apply(k) {
-      const s = this.shake * this.shake * 7;
-      const sx = (Math.random() - 0.5) * s, sy = (Math.random() - 0.5) * s, sz = (Math.random() - 0.5) * s;
+      // 흔들림: 프레임마다 난수를 쓰면 지직거리는 노이즈로 보인다.
+      // 서로 안 맞아떨어지는 주파수의 사인을 겹쳐 '덜컹거림'으로 읽히게 한다.
+      let sx = 0, sy = 0, sz = 0, sr = 0;
+      if (this.shake > 0.004) {
+        const s = this.shake * this.shake * 7, t = this._t;
+        sx = (Math.sin(t * 31.3) + 0.55 * Math.sin(t * 53.9)) * s * 0.42;
+        sy = (Math.sin(t * 27.7 + 1.3) + 0.55 * Math.sin(t * 44.1)) * s * 0.42;
+        sz = (Math.sin(t * 35.9 + 2.4) + 0.55 * Math.sin(t * 61.3)) * s * 0.42;
+        sr = Math.sin(t * 24.6 + 0.7) * this.shake * this.shake * 0.05;
+      }
       this.cam.position.set(this.x + sx, this.h + sy + Math.max(-6, Math.min(6, this.dip)), this.y + sz);
       const la = this.lookAhead;
       this.cam.lookAt(
-        k.x + Math.cos(k.angle) * la * 0.35 + sx,
-        21 + k.z * 0.85 + sy,
-        k.y + Math.sin(k.angle) * la * 0.35 + sz
+        k.x + Math.cos(k.angle) * la * 0.35 + sx * 0.35,
+        21 + k.z * 0.85 + sy * 0.35,
+        k.y + Math.sin(k.angle) * la * 0.35 + sz * 0.35
       );
-      if (this.roll) this.cam.rotateZ(this.roll);
+      if (this.roll || sr) this.cam.rotateZ(this.roll + sr);
       if (Math.abs(this.cam.fov - this.fov) > 0.01) {
         this.cam.fov = this.fov;
         this.cam.updateProjectionMatrix();
@@ -728,7 +738,10 @@
       if (global.Rig && m.userData.rig && camD < 700) global.Rig.update(m, k, dt, this.time);
 
       // 바퀴 회전 / 조향
-      const spin = k.speed * dt * 0.14;
+      // 프레임당 회전각이 커지면 스포크가 역회전하는 것처럼 보인다(웨건휠).
+      // 고속에서는 각속도를 부드럽게 포화시켜 잔상 대신 흐름으로 읽히게 한다.
+      const raw = k.speed * dt * 0.14;
+      const spin = raw < 0.34 ? raw : 0.34 + (raw - 0.34) * 0.18;
       for (const w of m.userData.wheels) w.rotation.z -= spin;
       const steerAng = (k.input.steer || 0) * 0.4 + (k.drifting ? k.driftDir * 0.25 : 0);
       for (const w of m.userData.frontWheels) w.rotation.y = -steerAng;
@@ -767,7 +780,7 @@
     }
 
     /* ============ 투사체 ============ */
-    _syncHazards(world) {
+    _syncHazards(world, dt) {
       const seen = new Set();
       for (const h of world.hazards) {
         if (h.dead) continue;
@@ -782,8 +795,9 @@
           this.hazardNodes.set(h, n);
         }
         n.position.set(h.x, (h.z || 8) + 8, h.y);
-        if (h.spin) n.rotation.y += 0.35;
-        else if (h.type === 'coin') n.rotation.y += 0.12;
+        // 프레임 수가 아니라 시간에 비례해 돌린다 (프레임 드랍 때 속도가 변하지 않게)
+        if (h.spin) n.rotation.y += dt * 7.2;
+        else if (h.type === 'coin') n.rotation.y += dt * 4.6;
         else n.rotation.y = -Math.atan2(h.vy || 0, h.vx || 1);
         if (h.type === 'bobomb') {
           const p = 1 - Math.max(0, h.life) / 2.2;
@@ -807,7 +821,7 @@
         if (!node) node = this.addKart(k);
         this._syncKart(node, dt || 0.016);
       }
-      this._syncHazards(world);
+      this._syncHazards(world, dt || 0.016);
 
       // 아이템 박스 (리스폰 중이면 축소)
       if (this.boxMeshes) {
@@ -831,7 +845,9 @@
         this.track.thwomps.forEach((t, i) => {
           const n = this.thwompNodes[i];
           n.position.y = t.h + 34;
-          n.rotation.z = t.shake * (Math.random() - 0.5) * 0.12;
+          // 매 프레임 난수는 지직거림으로 보인다. 감쇠하는 진동으로 떨게 한다
+          n.rotation.z = t.shake * Math.sin(this.time * 46) * 0.09;
+          n.rotation.x = t.shake * Math.sin(this.time * 37 + 1.1) * 0.06;
         });
       }
 
