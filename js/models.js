@@ -17,17 +17,35 @@
   }
   function mat(color, o) {
     o = o || {};
-    return new T.MeshStandardMaterial({
+    const p = {
       color: new T.Color(color),
-      roughness: o.rough === undefined ? 0.65 : o.rough,
+      roughness: o.rough === undefined ? 0.6 : o.rough,
       metalness: o.metal === undefined ? 0.05 : o.metal,
       flatShading: !!o.flat,
       emissive: new T.Color(o.emissive || 0x000000),
       emissiveIntensity: o.emissiveIntensity === undefined ? 1 : o.emissiveIntensity,
       transparent: !!o.transparent,
       opacity: o.opacity === undefined ? 1 : o.opacity,
-      side: o.side || T.FrontSide
-    });
+      side: o.side || T.FrontSide,
+      // 환경맵 반사 세기. 씬에 environment 가 걸려야 의미가 있다.
+      envMapIntensity: o.envI === undefined ? 1 : o.envI
+    };
+    // sheen 은 벨벳/플러시 특유의 가장자리 광택을 만든다 (CG 애니메이션 캐릭터 질감)
+    if (o.sheen) {
+      p.sheen = o.sheen;
+      p.sheenRoughness = o.sheenRough === undefined ? 0.65 : o.sheenRough;
+      p.sheenColor = new T.Color(o.sheenColor || '#ffffff');
+      const sm = new T.MeshPhysicalMaterial(p);
+      // 저사양에서 끌 수 있도록 등록해 둔다
+      if (global.Surface) global.Surface.register(sm);
+      return sm;
+    }
+    if (o.coat) {
+      p.clearcoat = o.coat;
+      p.clearcoatRoughness = o.coatRough === undefined ? 0.12 : o.coatRough;
+      return new T.MeshPhysicalMaterial(p);
+    }
+    return new T.MeshStandardMaterial(p);
   }
   function mesh(g, m, x, y, z) {
     const s = new T.Mesh(g, m);
@@ -36,7 +54,7 @@
     return s;
   }
   function sphere(r, m, x, y, z, seg) {
-    return mesh(geo('sph' + (seg || 16) + '_' + r.toFixed(2), () => new T.SphereGeometry(r, seg || 16, (seg || 16) * 0.75)), m, x, y, z);
+    return mesh(geo('sph' + (seg || 20) + '_' + r.toFixed(2), () => new T.SphereGeometry(r, seg || 20, Math.round((seg || 20) * 0.72))), m, x, y, z);
   }
   function box(w, h, d, m, x, y, z) {
     return mesh(geo('box' + [w, h, d].join('_'), () => new T.BoxGeometry(w, h, d)), m, x, y, z);
@@ -78,10 +96,10 @@
   }
   /** 회전체(lathe): [[반지름, 높이], ...] 프로파일을 돌려 유기적인 덩어리를 만든다 */
   function lathe(profile, m, seg) {
-    const key = 'lathe' + profile.map(p => p.join(',')).join('|') + (seg || 16);
+    const key = 'lathe' + profile.map(p => p.join(',')).join('|') + (seg || 24);
     const g = geo(key, () => {
       const pts = profile.map(p => new T.Vector2(Math.max(0.001, p[0]), p[1]));
-      const gg = new T.LatheGeometry(pts, seg || 16);
+      const gg = new T.LatheGeometry(pts, seg || 24);
       gg.computeVertexNormals();
       return gg;
     });
@@ -96,11 +114,11 @@
     const key = 'tbone' + [len, r0, r1].map(v => v.toFixed(2)).join('_');
     const g = geo(key, () => {
       const BGU = T.BufferGeometryUtils;
-      const shaft = new T.CylinderGeometry(r1, r0, len, 14, 1, true);
+      const shaft = new T.CylinderGeometry(r1, r0, len, 20, 1, true);
       shaft.translate(0, len / 2, 0);
       if (!BGU || !BGU.mergeGeometries) return shaft;
-      const capA = new T.SphereGeometry(r0, 14, 8);
-      const capB = new T.SphereGeometry(r1, 14, 8);
+      const capA = new T.SphereGeometry(r0, 20, 12);
+      const capB = new T.SphereGeometry(r1, 20, 12);
       capB.translate(0, len, 0);
       const parts = [shaft, capA, capB].map(x => {
         const nx = x.index ? x.toNonIndexed() : x;
@@ -187,14 +205,26 @@
     const heavy = ch.cls === 'heavy', light = ch.cls === 'light';
     const S = heavy ? 1.18 : (light ? 0.88 : 1.0);
 
-    const body = mat(c.body, { rough: 0.72 });
-    const belly = mat(c.belly, { rough: 0.75 });
-    const accent = mat(c.accent, { rough: 0.65 });
-    const trim = mat(c.trim, { rough: 0.6 });
-    const detail = mat(c.detail, { rough: 0.6 });
-    const white = mat('#f8f8fb', { rough: 0.45 });
-    const dark = mat('#1c1c24', { rough: 0.5 });
-    const shoeMat = mat(c.trim, { rough: 0.7 });
+    // 무광 확산광만 있으면 점토처럼 보인다. 부위별로 반사 성질을 다르게 준다.
+    const body = mat(c.body, { rough: 0.52, envI: 0.85, sheen: 0.95, sheenRough: 0.42,
+      sheenColor: new T.Color(c.body).lerp(new T.Color('#ffffff'), 0.7).getStyle() });
+    const belly = mat(c.belly, { rough: 0.58, envI: 0.75, sheen: 0.85, sheenRough: 0.5,
+      sheenColor: new T.Color(c.belly).lerp(new T.Color('#ffffff'), 0.7).getStyle() });
+    const accent = mat(c.accent, { rough: 0.3, envI: 1.15, coat: 0.55, coatRough: 0.14 });
+    const trim = mat(c.trim, { rough: 0.32, metal: 0.55, envI: 1.2 });
+    const detail = mat(c.detail, { rough: 0.34, envI: 1.1 });
+    const white = mat('#f8f8fb', { rough: 0.38, envI: 0.95 });
+    const dark = mat('#1c1c24', { rough: 0.34, metal: 0.25, envI: 1.1 });
+    const shoeMat = mat(c.trim, { rough: 0.5, envI: 0.85 });
+    // 미세 표면 결: 이게 없으면 하이라이트가 고르게 번져서 매끈한 점토로 보인다
+    const SD = global.Surface;
+    if (SD) {
+      SD.detail(body, { scale: 1.5, rough: 0.30, tint: 0.055 });   // 털/플러시
+      SD.detail(belly, { scale: 1.7, rough: 0.28, tint: 0.05 });
+      SD.detail(accent, { scale: 2.6, rough: 0.13, tint: 0.02 });  // 매끈한 플라스틱
+      SD.detail(shoeMat, { scale: 2.2, rough: 0.24, tint: 0.04 }); // 고무
+      SD.detail(white, { scale: 1.6, rough: 0.24, tint: 0.035 });
+    }
 
     /* ---- 치수 ---- */
     const torsoR = 4.3 * S, torsoLen = 6.6 * S;
@@ -220,7 +250,7 @@
     const hips = lathe([
       [0.2, -0.6], [torsoR * 0.62, -0.2], [torsoR * 0.95, 1.0],
       [torsoR * 0.88, 2.4], [torsoR * 0.66, 3.2], [0.2, 3.4]
-    ].map(v => [v[0], v[1] * S]), body, 18);
+    ].map(v => [v[0], v[1] * S]), body, 28);
     hips.scale.set(1, 1, 1.06);
     pelvis.add(hips);
 
@@ -265,7 +295,7 @@
       [0.2, -1.4], [torsoR * 0.74, -0.9], [torsoR * 0.92, 1.2],
       [torsoR * 0.88, 3.0], [torsoR * 1.0, 5.2], [torsoR * 0.93, 7.0],
       [torsoR * 0.66, 8.6], [torsoR * 0.34, 9.4], [0.2, 9.6]
-    ].map(v => [v[0], v[1] * S]), body, 18);
+    ].map(v => [v[0], v[1] * S]), body, 28);
     chest.position.y = chestY - 3.4 * S;
     chest.scale.set(1.0, 1, 0.9);
     torso.add(chest);
@@ -296,11 +326,11 @@
       hd.position.y = hc; hd.rotation.set(0.3, 0.6, 0.1);
       headJ.add(hd);
     } else {
-      const hd = sphere(headR, body, 0, hc, 0, 20);
+      const hd = sphere(headR, body, 0, hc, 0, 32);
       hd.scale.set(1, 1.03, 0.96);
       headJ.add(hd);
       // 턱: 아래쪽 앞으로 살짝 나온 볼륨
-      const jawV = sphere(headR * 0.72, body, headR * 0.22, hc - headR * 0.52, 0, 14);
+      const jawV = sphere(headR * 0.72, body, headR * 0.22, hc - headR * 0.52, 0, 24);
       jawV.scale.set(1.05, 0.72, 0.95);
       headJ.add(jawV);
     }
@@ -332,8 +362,9 @@
 
     /* ---------- 눈 ---------- */
     if (ch.id !== 'volt') {
-      const eyeMat = mat('#ffffff', { rough: 0.32 });
-      const pupilMat = mat(c.eye, { rough: 0.3 });
+      // 눈은 젖은 표면이다. 여기에 또렷한 하이라이트가 하나 박히면 즉시 살아 있는 캐릭터로 읽힌다
+      const eyeMat = mat('#ffffff', { rough: 0.05, envI: 2.2, coat: 1, coatRough: 0.02 });
+      const pupilMat = mat(c.eye, { rough: 0.06, envI: 2.0, coat: 1, coatRough: 0.03 });
       [-1, 1].forEach(sd => {
         const e = sphere(1.95 * S, eyeMat, front * 0.74, hc + headR * 0.14, sd * headR * 0.4, 12);
         e.scale.set(0.55, 1.05, 1); headJ.add(e);
@@ -573,17 +604,29 @@
 
     // 스탠다드 프레임은 캐릭터 시그니처 컬러를 입는다
     const bodyColor = fr.id === 'standard' ? ch.colors.accent : fr.body;
+    // 자동차 도색: 금속이 아니라 '유전체 + 투명 클리어코트' 다.
+    // metalness 를 올리면 확산광이 죽고 반사가 도색 색으로 물들어 플라스틱처럼 보인다.
     const bodyMat = new T.MeshPhysicalMaterial({
-      color: new T.Color(bodyColor), roughness: 0.24, metalness: 0.4,
-      clearcoat: 0.95, clearcoatRoughness: 0.08
+      color: new T.Color(bodyColor), roughness: 0.38, metalness: 0.04,
+      clearcoat: 1, clearcoatRoughness: 0.06, envMapIntensity: 1.25
     });
     const accentMat = new T.MeshPhysicalMaterial({
-      color: new T.Color(ch.colors.trim || '#f4d03f'), roughness: 0.3, metalness: 0.5, clearcoat: 0.6
+      color: new T.Color(ch.colors.trim || '#f4d03f'), roughness: 0.3, metalness: 0.25,
+      clearcoat: 0.85, clearcoatRoughness: 0.1, envMapIntensity: 1.25
     });
-    const darkMat = mat('#25252c', { rough: 0.5, metal: 0.3 });
-    const chromeMat = mat('#cfd4dc', { rough: 0.16, metal: 0.95 });
-    const tireMat = mat(wh.tire, { rough: 0.92, metal: 0 });
-    const rimMat = mat(wh.rim, { rough: 0.28, metal: 0.8 });
+    const darkMat = mat('#25252c', { rough: 0.38, metal: 0.35, envI: 1.1 });
+    const chromeMat = mat('#dfe4ec', { rough: 0.1, metal: 1, envI: 1.5 });
+    // 타이어: 완전 무광이면 검은 점토가 된다. 고무는 옆면에 은은한 광이 돈다
+    const tireMat = mat(wh.tire, { rough: 0.68, metal: 0, envI: 0.55,
+      sheen: 0.35, sheenRough: 0.85, sheenColor: '#7a808c' });
+    const rimMat = mat(wh.rim, { rough: 0.24, metal: 0.85, envI: 1.2 });
+    const SDK = global.Surface;
+    if (SDK) {
+      SDK.detail(bodyMat, { scale: 0.9, rough: 0.10, tint: 0.022 });   // 도색 오렌지필
+      SDK.detail(accentMat, { scale: 1.1, rough: 0.10, tint: 0.02 });
+      SDK.detail(tireMat, { scale: 3.4, rough: 0.26, tint: 0.06 });    // 고무 결
+      SDK.detail(darkMat, { scale: 1.6, rough: 0.18, tint: 0.035 });
+    }
 
     /* 섀시 */
     const chassis = rounded(L, W, 7.5, 6, bodyMat);
@@ -749,7 +792,8 @@
     wheels.forEach(w => { w.userData.baseY = w.position.y; });
 
     g.userData.dims = { L, W, wr };
-    optimize(g);
+    // 파츠 사이 틈을 어둡게 굽는다 (목/겨드랑이/바퀴집/시트 뒤)
+    optimize(g, { ao: true });
     return g;
   }
 
@@ -759,10 +803,74 @@
    * 덕분에 관절은 런타임에 따로 움직일 수 있으면서 드로우콜은 최소로 유지된다.
    * userData.dynamic / external 이 붙은 서브트리는 손대지 않는다.
    */
-  function optimize(root) {
+  /* -------------------------------------------------------------
+   * 근사 앰비언트 오클루전 (구 프록시 방식)
+   *
+   * 목/겨드랑이/바퀴집처럼 파묻힌 곳이 어두워지지 않으면 캐릭터가 하나의
+   * 덩어리진 점토로 보인다. 파츠마다 바운딩 구를 뽑아, 정점에서 그 구들이
+   * 가리는 입체각을 더해 가려짐을 구한다. 저폴리 뭉툭한 형태에 잘 맞고
+   * 레이캐스팅 없이 즉시 계산된다. 결과는 정점 색에 넣어 확산광만 어둡게 한다.
+   * ----------------------------------------------------------- */
+  const _aoP = new T.Vector3(), _aoN = new T.Vector3(), _aoD = new T.Vector3();
+
+  function collectOccluders(root) {
+    const list = [];
+    root.traverse(o => {
+      if (!o.isMesh || !o.geometry) return;
+      if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+      const bs = o.geometry.boundingSphere;
+      if (!bs || !(bs.radius > 0)) return;
+      const c = bs.center.clone().applyMatrix4(o.matrixWorld);
+      // 비균일 스케일은 최대 축 기준으로 근사한다
+      const sc = new T.Vector3().setFromMatrixScale(o.matrixWorld);
+      const r = bs.radius * Math.max(sc.x, sc.y, sc.z);
+      list.push({ c, r, r2: r * r, cut: (r * 4.2) * (r * 4.2), owner: o });
+    });
+    return list;
+  }
+
+  function bakeAO(gg, ownerMatrix, occluders, self, strength, floor) {
+    const pos = gg.attributes.position, nrm = gg.attributes.normal;
+    if (!pos || !nrm) return;
+    const n = pos.count;
+    const col = new Float32Array(n * 3);
+    const nMat = new T.Matrix3().getNormalMatrix(ownerMatrix);
+    for (let i = 0; i < n; i++) {
+      _aoP.fromBufferAttribute(pos, i).applyMatrix4(ownerMatrix);
+      _aoN.fromBufferAttribute(nrm, i).applyMatrix3(nMat).normalize();
+      let occ = 0;
+      for (let j = 0; j < occluders.length; j++) {
+        const s = occluders[j];
+        if (s === self) continue;
+        _aoD.subVectors(s.c, _aoP);
+        const d2 = _aoD.lengthSq();
+        if (d2 > s.cut) continue;                 // 멀면 기여가 없다
+        const d = Math.sqrt(d2);
+        if (d < 1e-4) continue;
+        const cosT = _aoD.dot(_aoN) / d;
+        if (cosT <= 0) continue;                  // 등 뒤의 구는 가리지 않는다
+        // 구가 덮는 반구 입체각 비율 (정점이 구 안에 있으면 최대치로 클램프)
+        const ratio = s.r2 / Math.max(d2, s.r2 * 1.0002);
+        occ += 0.5 * (1 - Math.sqrt(1 - ratio)) * cosT;
+      }
+      // 캐릭터는 겹치는 프리미티브 수십 개로 이루어져 있어 단순 합산하면
+      // 모든 정점이 바닥값에 눌러붙는다. 포화 곡선으로 눌러 대비를 살린다.
+      const ao = Math.max(floor, 1 - strength * (occ / (occ + 0.85)));
+      col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = ao;
+    }
+    gg.setAttribute('color', new T.BufferAttribute(col, 3));
+  }
+
+  function optimize(root, opts) {
     const BGU = T.BufferGeometryUtils;
     if (!BGU || !BGU.mergeGeometries) return root;
     root.updateMatrixWorld(true);
+    opts = opts || {};
+    const occluders = opts.ao ? collectOccluders(root) : null;
+    const aoStrength = opts.aoStrength === undefined ? 0.68 : opts.aoStrength;
+    const aoFloor = opts.aoFloor === undefined ? 0.34 : opts.aoFloor;
+    const selfOf = new Map();
+    if (occluders) for (const s of occluders) selfOf.set(s.owner, s);
 
     const buckets = new Map();          // ownerNode -> Map(material -> [geometry])
     const remove = [];
@@ -778,10 +886,15 @@
           inv.copy(owner.matrixWorld).invert();
           gg.applyMatrix4(tmp.copy(inv).multiply(child.matrixWorld));
           for (const name of Object.keys(gg.attributes)) {
-            if (name !== 'position' && name !== 'normal' && name !== 'uv') gg.deleteAttribute(name);
+            if (name !== 'position' && name !== 'normal' && name !== 'uv' && name !== 'color') {
+              gg.deleteAttribute(name);
+            }
           }
           if (!gg.attributes.uv) {
             gg.setAttribute('uv', new T.BufferAttribute(new Float32Array(gg.attributes.position.count * 2), 2));
+          }
+          if (occluders) {
+            bakeAO(gg, owner.matrixWorld, occluders, selfOf.get(child), aoStrength, aoFloor);
           }
           if (!buckets.has(owner)) buckets.set(owner, new Map());
           const bm = buckets.get(owner);
@@ -796,10 +909,19 @@
     for (const o of remove) if (o.parent) o.parent.remove(o);
     buckets.forEach((byMat, owner) => {
       byMat.forEach((geos, material) => {
+        // 색 속성이 있는 것과 없는 것이 섞이면 병합이 실패한다. 없는 쪽은 흰색으로 채운다.
+        if (geos.some(gg => gg.attributes.color)) {
+          for (const gg of geos) {
+            if (gg.attributes.color) continue;
+            const cnt = gg.attributes.position.count;
+            gg.setAttribute('color', new T.BufferAttribute(new Float32Array(cnt * 3).fill(1), 3));
+          }
+        }
         let merged;
         try { merged = BGU.mergeGeometries(geos, false); } catch (e) { merged = null; }
         geos.forEach(gg => gg.dispose && gg.dispose());
         if (!merged) return;
+        if (occluders && merged.attributes.color) material.vertexColors = true;
         const m = new T.Mesh(merged, material);
         m.castShadow = true; m.receiveShadow = true;
         owner.add(m);

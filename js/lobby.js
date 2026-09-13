@@ -204,7 +204,13 @@
       gl.shadowMap.type = T.PCFSoftShadowMap;
 
       const sc = new T.Scene();
-      sc.add(new T.HemisphereLight(0x9fc4ff, 0x141a33, 1.7));
+      // 환경맵이 있어야 도색/크롬/눈동자가 게임 화면과 같은 광택으로 보인다
+      if (global.Surface) {
+        if (this._envRT) this._envRT.dispose();
+        this._envRT = global.Surface.envMap(gl, 'studio');
+        if (this._envRT) sc.environment = this._envRT.texture;
+      }
+      sc.add(new T.HemisphereLight(0x9fc4ff, 0x141a33, 0.85));
       const key = new T.DirectionalLight(0xffffff, 3.2);
       key.position.set(70, 110, 60);
       key.castShadow = true;

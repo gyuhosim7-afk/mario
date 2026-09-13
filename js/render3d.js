@@ -329,6 +329,8 @@
           if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
         }
       }
+      // 표면 디테일 셰이더 / 시언은 픽셀당 비용이 커서 저사양에서는 내려야 한다
+      if (global.Surface) global.Surface.quality(q >= 3 ? 2 : (q >= 2 ? 1 : 0));
       this.scene.traverse(o => { if (o.isMesh) o.material.needsUpdate = true; });
       if (window.console) console.info('[render] quality level ->', q);
     }
@@ -400,7 +402,8 @@
       const hemi = new T.HemisphereLight(
         theme === 'circuit' ? 0xcfe8ff : (theme === 'bowser' ? 0x6a2410 : 0x8aa8ff),
         theme === 'circuit' ? 0x4a7a3a : (theme === 'bowser' ? 0x3a1006 : 0x2a2050),
-        theme === 'circuit' ? 0.72 : (theme === 'bowser' ? 0.62 : 1.25)
+        // 환경맵이 하늘의 확산광을 이미 넣어주므로 반구광은 줄인다 (안 그러면 뿌옇게 뜬다)
+        theme === 'circuit' ? 0.30 : (theme === 'bowser' ? 0.28 : 0.55)
       );
       sc.add(hemi); this.lights.push(hemi);
       const sun = new T.DirectionalLight(
@@ -418,8 +421,19 @@
       sc.add(sun); sc.add(sun.target);
       this.lights.push(sun, sun.target);
       this.sun = sun;
-      const amb = new T.AmbientLight(0xffffff, theme === 'circuit' ? 0.10 : (theme === 'bowser' ? 0.12 : 0.30));
+      const amb = new T.AmbientLight(0xffffff, theme === 'circuit' ? 0.06 : (theme === 'bowser' ? 0.08 : 0.20));
       sc.add(amb); this.lights.push(amb);
+
+      // 림 라이트: 해와 반대쪽에서 실루엣 가장자리만 밝힌다.
+      // 3D 애니메이션이 캐릭터를 배경에서 떼어놓을 때 쓰는 그 빛이다. 그림자는 만들지 않는다.
+      const rim = new T.DirectionalLight(
+        theme === 'circuit' ? 0xbfe0ff : (theme === 'bowser' ? 0xff8a4a : 0xb0a0ff),
+        theme === 'circuit' ? 1.5 : (theme === 'bowser' ? 1.25 : 1.6)
+      );
+      rim.position.set(420, 300, -520);
+      sc.add(rim); sc.add(rim.target);
+      this.lights.push(rim, rim.target);
+      this.rim = rim;
 
       /* --- 하늘 돔 --- */
       const skyTex = global.Tex.tex(global.Tex.skyDome(theme), 1, 1);
@@ -430,6 +444,10 @@
       sky.renderOrder = -1;
       g.add(sky);
       this.sky = sky;
+
+      // 환경맵(IBL). 이게 없으면 metalness/clearcoat 가 반사할 주변광이 없어서
+      // 금속도 자동차 도색도 눈동자도 전부 무광 점토처럼 보인다.
+      this._buildEnv(theme, skyTex);
 
       /* --- 지형 --- */
       if (theme === 'circuit') {
@@ -638,6 +656,18 @@
         if (it.anim) this.backdrop.push(it);
       }
 
+      // 환경맵은 씬 전체에 걸리므로 트랙/지형/배경까지 하늘빛을 그대로 받아 하얗게 뜬다.
+      // 반사가 의미 있는 건 카트와 캐릭터뿐이므로 배경 쪽은 세기를 낮춘다.
+      g.traverse(o => {
+        if (!o.isMesh || !o.material) return;
+        const list = Array.isArray(o.material) ? o.material : [o.material];
+        for (const m of list) {
+          if (m.envMapIntensity === undefined || m.__envSet) continue;
+          m.envMapIntensity = m.metalness > 0.5 ? 0.85 : 0.3;
+          m.__envSet = true;
+        }
+      });
+
       this._setupComposer(theme);
       this.theme = theme;
     }
@@ -777,6 +807,13 @@
       node.blob.scale.setScalar(sc * (1 - lift * 0.45));
       node.blob.material.opacity = 0.55 * (1 - lift) * (k.state === 'RESPAWN' ? 0.3 : 1);
       node.blob.visible = k.z < 320;
+    }
+
+    /* ============ 환경맵 (IBL) ============ */
+    _buildEnv(theme, skyTex) {
+      if (this._envRT) { this._envRT.dispose(); this._envRT = null; }
+      this._envRT = global.Surface ? global.Surface.envMap(this.gl, theme, skyTex) : null;
+      this.scene.environment = this._envRT ? this._envRT.texture : null;
     }
 
     /* ============ 투사체 ============ */

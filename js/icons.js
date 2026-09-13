@@ -26,7 +26,11 @@
       this._gl = gl;
 
       const sc = new T.Scene();
-      sc.add(new T.HemisphereLight(0xdfe9ff, 0x2a2f45, 2.0));
+      if (global.Surface) {
+        const rt = global.Surface.envMap(gl, 'studio');
+        if (rt) { sc.environment = rt.texture; this._envRT = rt; }
+      }
+      sc.add(new T.HemisphereLight(0xdfe9ff, 0x2a2f45, 1.0));
       const key = new T.DirectionalLight(0xffffff, 3.0);
       key.position.set(60, 90, 70);
       sc.add(key);
