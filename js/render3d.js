@@ -834,12 +834,15 @@
       this._envRT = global.Surface ? global.Surface.envMap(this.gl, theme, skyTex) : null;
       this.scene.environment = this._envRT ? this._envRT.texture : null;
 
-      // manifest 에 실제 HDRI 가 등록돼 있으면 그쪽을 우선한다 (비동기, 실패해도 무시)
+      // 실제 HDRI 가 있으면 그쪽을 우선한다 (비동기, 실패해도 무시).
+      // manifest 에 지정이 없으면 관례 경로 assets/env/env.hdr 을 한 번 찔러본다.
+      // 결과는 URL 단위로 캐시되므로 없는 파일도 세션당 404 한 번으로 끝난다.
+      if (!global.Surface) return;
+      const base = (global.Assets && global.Assets.base) || 'assets/';
       const man = global.Assets && global.Assets.manifest;
       const envDef = man && man.env;
       const file = envDef && (typeof envDef === 'string' ? envDef : (envDef[theme] || envDef.default));
-      if (!file || !global.Surface) return;
-      const url = (global.Assets.base || 'assets/') + file;
+      const url = file ? base + file : base + 'env/env.hdr';
       const want = theme;
       global.Surface.hdriMap(this.gl, url).then(rt => {
         if (rt && this.theme === want) this.scene.environment = rt.texture;

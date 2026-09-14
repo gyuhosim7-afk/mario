@@ -295,9 +295,10 @@ pelvis ─┬─ torso ─┬─ head
 1. CC0 HDRI 를 하나 받습니다 (예: [Poly Haven](https://polyhaven.com/hdris) —
    전부 CC0 라 출처 표기 없이 써도 됩니다). **1k 또는 2k 해상도면 충분**합니다.
    4k 이상은 굽는 데만 오래 걸리고 화면에선 차이가 거의 없습니다
-2. `assets/env/` 에 넣습니다 (예: `assets/env/sunny.hdr`)
-3. `assets/manifest.json` 을 만들고 아래처럼 적습니다
-   (`assets/manifest.example.json` 을 복사해서 고쳐도 됩니다)
+2. **`assets/env/env.hdr`** 로 저장합니다. 끝입니다 — 설정 파일은 필요 없습니다
+
+트랙마다 다른 HDRI 를 쓰고 싶을 때만 `assets/manifest.json` 을 만듭니다
+(`assets/manifest.example.json` 을 복사해서 고쳐도 됩니다).
 
 ```json
 {
@@ -315,6 +316,7 @@ pelvis ─┬─ torso ─┬─ head
 
 > ⚠️ 브라우저 보안 정책상 `file://` 로 열면 외부 파일을 못 읽습니다.
 > `npx http-server` 같은 로컬 서버로 띄워야 HDRI 가 적용됩니다.
+> `.hdr` (Radiance RGBE) 만 지원합니다. `.exr` 은 읽지 못합니다.
 
 ## 외부 3D 모델 넣기 (선택)
 
