@@ -1288,6 +1288,93 @@
   }
 
   /** 테마별 대형 배경물 세트: [{obj, x, z, y, rot, scale, anim}] */
+  /**
+   * 지평선 산줄기.
+   *
+   * 지면 평면이 하늘과 만나는 자리가 직선으로 뚝 끊기면 배경이 대번에 싸구려로
+   * 보인다. 거리가 다른 커튼 세 겹을 둘러 그 선을 가리고, 멀수록 안개색에 가깝게
+   * 정점 색을 구워 공기원근(aerial perspective)을 만든다. 한 겹이 128 세그먼트짜리
+   * 삼각형 띠라 통째로도 몇백 폴리곤이다.
+   */
+  function buildHorizon(theme, world) {
+    if (theme === 'rainbow') return null;          // 우주에는 지평선이 없다
+    const C = world / 2;
+    const L = theme === 'bowser'
+      ? [{ r: 3900, h: 640, amp: 0.80, sharp: 1, col: '#1d0e0a', haze: '#4a1c0d', hz: 0.34, seed: 1.3 },
+         { r: 4700, h: 980, amp: 0.85, sharp: 1, col: '#26120c', haze: '#6b2810', hz: 0.54, seed: 2.7 },
+         { r: 5500, h: 1420, amp: 0.72, sharp: 1, col: '#33180f', haze: '#8a3614', hz: 0.74, seed: 4.1 }]
+      : [{ r: 3900, h: 520, amp: 0.62, sharp: 0, col: '#568049', haze: '#c8e0ee', hz: 0.30, seed: 1.3 },
+         { r: 4700, h: 820, amp: 0.70, sharp: 0, col: '#5d7f8c', haze: '#d6eaf6', hz: 0.52, seed: 2.7 },
+         { r: 5500, h: 1200, amp: 0.58, sharp: 0, col: '#8fb0c6', haze: '#e6f2fa', hz: 0.74, seed: 4.1 }];
+
+    const g = new T.Group();
+    const N = 128;
+    const lo = new T.Color(), hi = new T.Color(), base = new T.Color(), hz = new T.Color();
+
+    for (let li = 0; li < L.length; li++) {
+      const d = L[li];
+      base.set(d.col); hz.set(d.haze);
+      // 아래쪽(지평선에 붙은 부분)이 더 뿌옇다
+      lo.copy(base).lerp(hz, Math.min(1, d.hz * 0.9 + 0.12));
+      hi.copy(base).lerp(hz, d.hz * 0.42);
+
+      const height = (i) => {
+        const a = (i % N) / N * Math.PI * 2;
+        // 정수 배수 주파수라야 한 바퀴 돌아 이어진다
+        let v = Math.sin(a * 3 + d.seed) * 0.50
+              + Math.sin(a * 7 + d.seed * 2.1) * 0.27
+              + Math.sin(a * 13 + d.seed * 3.4) * 0.14
+              + Math.sin(a * 23 + d.seed * 1.6) * 0.09;
+        if (d.sharp) v = Math.sign(v) * Math.pow(Math.abs(v), 0.62);   // 화산 능선은 뾰족하게
+        return Math.max(0.12, 0.56 + v * d.amp * 0.5) * d.h;
+      };
+
+      const pos = new Float32Array(N * 6 * 3);
+      const col = new Float32Array(N * 6 * 3);
+      let p = 0, q = 0;
+      const push = (x, y, z, c) => {
+        pos[p++] = x; pos[p++] = y; pos[p++] = z;
+        col[q++] = c.r; col[q++] = c.g; col[q++] = c.b;
+      };
+      // 해 쪽을 향한 능선은 밝고 반대쪽은 어둡다. 조명을 안 받는 면이라
+      // 이걸 정점 색에 구워 넣지 않으면 오려붙인 종이처럼 평평해 보인다.
+      const SUN_AZ = Math.atan2(260, -380);
+      const t0c = new T.Color(), t1c = new T.Color();
+      const shade = (out, src, a, up) => {
+        let da = a - SUN_AZ;
+        while (da > Math.PI) da -= Math.PI * 2;
+        while (da < -Math.PI) da += Math.PI * 2;
+        // 해 방향 +14% ~ 반대편 -16%, 능선 위쪽이 빛을 더 받는다
+        const k = 1 + Math.cos(da) * 0.15 * (0.55 + up * 0.45)
+                    + Math.sin(a * 5 + d.seed * 2.3) * 0.035;
+        out.copy(src).multiplyScalar(k);
+      };
+      for (let i = 0; i < N; i++) {
+        const a0 = i / N * Math.PI * 2, a1 = (i + 1) / N * Math.PI * 2;
+        const x0 = Math.cos(a0) * d.r, z0 = Math.sin(a0) * d.r;
+        const x1 = Math.cos(a1) * d.r, z1 = Math.sin(a1) * d.r;
+        const h0 = height(i), h1 = height(i + 1);
+        shade(t0c, hi, a0, 1); shade(t1c, hi, a1, 1);
+        const b0 = t0c.clone().lerp(lo, 0.82), b1 = t1c.clone().lerp(lo, 0.82);
+        // 바닥을 조금 내려 지면과 겹치게 해서 틈이 생기지 않게 한다
+        push(x0, -160, z0, b0); push(x1, -160, z1, b1); push(x1, h1, z1, t1c);
+        push(x0, -160, z0, b0); push(x1, h1, z1, t1c); push(x0, h0, z0, t0c);
+      }
+      const gg = new T.BufferGeometry();
+      gg.setAttribute('position', new T.BufferAttribute(pos, 3));
+      gg.setAttribute('color', new T.BufferAttribute(col, 3));
+      gg.computeVertexNormals();
+      // 조명을 받지 않는 먼 실루엣이다. 안개는 받아서 하늘에 녹아들게 한다.
+      const m = new T.MeshBasicMaterial({ vertexColors: true, fog: true, side: T.DoubleSide });
+      const mesh = new T.Mesh(gg, m);
+      mesh.renderOrder = -1 + li * 0.01;
+      mesh.frustumCulled = false;
+      g.add(mesh);
+    }
+    g.position.set(C, 0, C);
+    return g;
+  }
+
   function buildBackdrop(theme, world) {
     const items = [];
     const C = world / 2;
@@ -1499,5 +1586,5 @@
     return g;
   }
 
-  global.Models = { buildKart, optimize, buildGantry, buildBackdrop, lathe, taperBone, buildCharacter, buildItem, buildProp, buildLandmark, mat, mesh, sphere, box, cyl, cone, rounded, starShape, torus, geo };
+  global.Models = { buildKart, optimize, buildGantry, buildBackdrop, buildHorizon, lathe, taperBone, buildCharacter, buildItem, buildProp, buildLandmark, mat, mesh, sphere, box, cyl, cone, rounded, starShape, torus, geo };
 })(window);

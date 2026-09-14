@@ -439,11 +439,18 @@
       const skyTex = global.Tex.tex(global.Tex.skyDome(theme), 1, 1);
       const sky = new T.Mesh(
         new T.SphereGeometry(8600, 40, 24),
-        new T.MeshBasicMaterial({ map: skyTex, side: T.BackSide, fog: false, toneMapped: false })
+        // depthWrite 를 끄면 하늘이 무엇도 가리지 않는다 (카메라가 돔 가까이 가도 안전)
+        new T.MeshBasicMaterial({ map: skyTex, side: T.BackSide, fog: false,
+                                  toneMapped: false, depthWrite: false })
       );
-      sky.renderOrder = -1;
+      sky.renderOrder = -2;
+      sky.frustumCulled = false;
       g.add(sky);
       this.sky = sky;
+
+      // 지평선 산줄기 — 지면이 하늘과 만나는 직선을 가리고 공기원근을 만든다
+      const horizon = global.Models.buildHorizon(theme, track.world);
+      if (horizon) g.add(horizon);
 
       // 환경맵(IBL). 이게 없으면 metalness/clearcoat 가 반사할 주변광이 없어서
       // 금속도 자동차 도색도 눈동자도 전부 무광 점토처럼 보인다.
@@ -452,7 +459,7 @@
       /* --- 지형 --- */
       if (theme === 'circuit') {
         const gt = global.Tex.get('grass', global.Tex.grass, 210, 210);
-        const gm = new T.MeshStandardMaterial({ map: gt.color, normalMap: gt.normal, roughness: 1 });
+        const gm = new T.MeshStandardMaterial({ map: gt.color, normalMap: gt.normal, roughness: 1, vertexColors: true });
         const gg = new T.PlaneGeometry(16000, 16000, 120, 120);
         this._displace(gg, track, 620, 560);
         const ground = new T.Mesh(gg, gm);
@@ -464,7 +471,7 @@
         const lt = global.Tex.get('lavaground', global.Tex.lavaField, 92, 92);
         const lm = new T.MeshStandardMaterial({
           map: lt.color, emissive: new T.Color('#ff5a10'), emissiveMap: lt.emissive,
-          emissiveIntensity: 0.72, roughness: 0.85
+          emissiveIntensity: 1.35, roughness: 0.8, vertexColors: true
         });
         const bg2 = new T.PlaneGeometry(16000, 16000, 110, 110);
         this._displace(bg2, track, 520, 640, 0.55);
@@ -704,6 +711,18 @@
         pos.setZ(i, t * maxH * (0.25 + 0.75 * n) * (rough === undefined ? 1 : rough) +
                     t * (rough ? vnoise(wx, wz, 140) * 90 : 0));
       }
+      // 저주파 색 얼룩. 타일 텍스처를 넓은 면에 깔면 같은 무늬가 줄지어 보이는데,
+      // 텍스처와 주기가 다른 큰 반점을 곱해주면 그 규칙성이 깨진다.
+      // 동시에 풀밭에 밝고 어두운 기복이 생겨 원경이 밋밋하지 않다.
+      const col = new Float32Array(pos.count * 3);
+      for (let i = 0; i < pos.count; i++) {
+        const wx = c + pos.getX(i), wz = c + pos.getY(i);
+        const m = vnoise(wx, wz, 1700) * 0.46 + vnoise(wx, wz, 640) * 0.27
+                + vnoise(wx, wz, 300) * 0.17 + vnoise(wx, wz, 150) * 0.10;
+        const v = 0.76 + m * 0.48;                       // 0.76 ~ 1.24
+        col[i * 3] = v * 0.99; col[i * 3 + 1] = v; col[i * 3 + 2] = v * 0.95;
+      }
+      geometry.setAttribute('color', new T.BufferAttribute(col, 3));
       pos.needsUpdate = true;
       geometry.computeVertexNormals();
       return geometry;

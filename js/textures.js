@@ -77,7 +77,7 @@
     const t = new T.CanvasTexture(canvas);
     t.wrapS = t.wrapT = T.RepeatWrapping;
     t.repeat.set(repeatX || 1, repeatY || 1);
-    t.anisotropy = 8;
+    t.anisotropy = 16;   // 하드웨어 최대치로 클램프된다. 원경 노면 어른거림을 줄인다
     if (srgb !== false) t.colorSpace = T.SRGBColorSpace;
     t.needsUpdate = true;
     return t;
@@ -87,8 +87,10 @@
   function asphalt() {
     const S = 512, c = make(S, S), g = c.getContext('2d');
     g.fillStyle = '#4b4b53'; g.fillRect(0, 0, S, S);
-    valueNoise(g, S, S, 64, 0.22);
-    valueNoise(g, S, S, 9, 0.16);
+    // 큰 얼룩은 타일 경계가 격자로 드러나게 만든다. 결은 잘게 유지한다.
+    valueNoise(g, S, S, 34, 0.11);
+    valueNoise(g, S, S, 13, 0.14);
+    valueNoise(g, S, S, 5, 0.13);
     for (let i = 0; i < 24000; i++) {
       const x = Math.random() * S, y = Math.random() * S, r = Math.random() * 1.7;
       g.fillStyle = Math.random() < 0.5 ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.12)';
@@ -108,8 +110,11 @@
   function grass() {
     const S = 512, c = make(S, S), g = c.getContext('2d');
     g.fillStyle = '#2f7a2a'; g.fillRect(0, 0, S, S);
-    valueNoise(g, S, S, 96, 0.3, [0.7, 1.1, 0.6]);
-    valueNoise(g, S, S, 16, 0.22, [0.6, 1.0, 0.5]);
+    // 큰 얼룩을 타일 안에 넣으면 그 무늬가 그대로 되풀이돼 바닥이 격자로 보인다.
+    // 큰 스케일 변화는 지형 정점 색(Renderer._displace)이 맡고, 여기서는 잔결만 만든다.
+    valueNoise(g, S, S, 58, 0.13, [0.7, 1.1, 0.6]);
+    valueNoise(g, S, S, 16, 0.20, [0.6, 1.0, 0.5]);
+    valueNoise(g, S, S, 6, 0.16, [0.65, 1.05, 0.55]);
     for (let i = 0; i < 42000; i++) {
       const x = Math.random() * S, y = Math.random() * S, l = 2 + Math.random() * 6;
       const t = Math.random();
@@ -166,21 +171,78 @@
 
   function lavaField() {
     const S = 512, c = make(S, S), g = c.getContext('2d');
-    g.fillStyle = '#ff8a1e'; g.fillRect(0, 0, S, S);
-    valueNoise(g, S, S, 48, 0.5, [1.2, 0.7, 0.2]);
-    // 식은 표면 껍질
-    for (let i = 0; i < 900; i++) {
-      const x = Math.random() * S, y = Math.random() * S, r = 8 + Math.random() * 46;
-      g.fillStyle = 'rgba(40,18,10,' + (0.25 + Math.random() * 0.45) + ')';
-      g.beginPath(); g.ellipse(x, y, r, r * (0.4 + Math.random() * 0.6), Math.random() * 6.28, 0, 6.28); g.fill();
-    }
-    for (let i = 0; i < 400; i++) {
-      const x = Math.random() * S, y = Math.random() * S, r = 3 + Math.random() * 16;
-      g.fillStyle = 'rgba(255,236,150,' + (0.2 + Math.random() * 0.5) + ')';
-      g.beginPath(); g.ellipse(x, y, r, r * 0.6, Math.random() * 6.28, 0, 6.28); g.fill();
-    }
     const em = make(S, S), eg = em.getContext('2d');
-    eg.drawImage(c, 0, 0);
+
+    // 온통 용암이면 화면 전체가 주황 하나로 떠서 성의 검은 실루엣이 죽는다.
+    // 식어서 굳은 검은 암반을 바탕으로 깔고, 그 틈으로만 용암이 빛나게 한다.
+    g.fillStyle = '#241512'; g.fillRect(0, 0, S, S);
+    valueNoise(g, S, S, 52, 0.42, [1.05, 0.85, 0.8]);
+    valueNoise(g, S, S, 9, 0.28, [1.0, 0.9, 0.85]);
+    eg.fillStyle = '#000000'; eg.fillRect(0, 0, S, S);
+
+    // 상하좌우로 이어지도록 3x3 으로 감싸 그린다 (타일 경계에서 균열이 끊기지 않게)
+    const wrapXY = (fn) => {
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          g.save(); eg.save();
+          g.translate(dx * S, dy * S); eg.translate(dx * S, dy * S);
+          fn();
+          g.restore(); eg.restore();
+        }
+      }
+    };
+
+    // 용암 균열: 굽이치는 선을 따라 바깥쪽은 붉은 잔광, 안쪽은 흰 뜨거운 심
+    const vein = (x0, y0, len, wide) => {
+      const pts = [[x0, y0]];
+      let a = Math.random() * 6.28;
+      for (let k = 0; k < len; k++) {
+        a += (Math.random() - 0.5) * 1.0;
+        const last = pts[pts.length - 1];
+        pts.push([last[0] + Math.cos(a) * 15, last[1] + Math.sin(a) * 15]);
+      }
+      const stroke = (ctx, w, col, blur) => {
+        ctx.save();
+        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        ctx.strokeStyle = col; ctx.lineWidth = w;
+        if (blur) { ctx.shadowColor = col; ctx.shadowBlur = blur; }
+        ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+        for (let k = 1; k < pts.length; k++) ctx.lineTo(pts[k][0], pts[k][1]);
+        ctx.stroke();
+        ctx.restore();
+      };
+      for (const ctx of [g, eg]) {
+        stroke(ctx, wide * 3.4, 'rgba(120,26,6,0.40)', 16);
+        stroke(ctx, wide * 1.9, 'rgba(236,86,12,0.72)', 10);
+        stroke(ctx, wide * 0.9, 'rgba(255,196,92,0.92)', 6);
+        stroke(ctx, wide * 0.34, 'rgba(255,244,214,0.95)', 0);
+      }
+    };
+    wrapXY(() => {
+      for (let i = 0; i < 9; i++) vein(Math.random() * S, Math.random() * S, 8 + (i % 5) * 3, 1.5 + (i % 3) * 0.9);
+    });
+
+    // 드문드문 끓는 용암 웅덩이
+    wrapXY(() => {
+      for (let i = 0; i < 4; i++) {
+        const x = Math.random() * S, y = Math.random() * S, r = 16 + Math.random() * 26;
+        for (const ctx of [g, eg]) {
+          const rg = ctx.createRadialGradient(x, y, 0, x, y, r);
+          rg.addColorStop(0, 'rgba(255,238,178,0.95)');
+          rg.addColorStop(0.45, 'rgba(244,118,20,0.78)');
+          rg.addColorStop(1, 'rgba(96,22,6,0)');
+          ctx.fillStyle = rg;
+          ctx.beginPath(); ctx.ellipse(x, y, r, r * (0.6 + Math.random() * 0.4), 0, 0, 6.28); ctx.fill();
+        }
+      }
+    });
+
+    // 암반 위 잔부스러기 (색상 맵에만 — 빛나지 않는다)
+    for (let i = 0; i < 700; i++) {
+      const x = Math.random() * S, y = Math.random() * S, r = 2 + Math.random() * 7;
+      g.fillStyle = 'rgba(18,10,9,' + (0.2 + Math.random() * 0.4) + ')';
+      g.beginPath(); g.ellipse(x, y, r, r * (0.5 + Math.random() * 0.6), Math.random() * 6.28, 0, 6.28); g.fill();
+    }
     return { color: c, emissive: em };
   }
 
@@ -320,62 +382,210 @@
     return c;
   }
 
-  /* ---------------- 하늘 ---------------- */
+  /* ---------------- 하늘 ----------------
+   * 정거원통(equirectangular) 캔버스. 위쪽 절반이 하늘, 아래쪽 절반이 지면이다.
+   *   · 캔버스 y=0    -> 천정(+Y)
+   *   · 캔버스 y=H/2  -> 지평선
+   *   · 캔버스 y=H    -> 발밑(-Y)
+   * 하늘 돔에 입히는 동시에 환경맵(Surface.envMap)의 재료로도 쓰이므로,
+   * 여기를 잘 그리면 차체에 비치는 반사까지 같이 좋아진다.
+   * -------------------------------------- */
+
+  // 키라이트 방향 (-380, 620, 260) 을 equirect UV 로 변환한 값.
+  // 하늘에 그리는 해와 실제 그림자 방향을 일치시키기 위한 것.
+  const SUN_U = 0.0956, SUN_V = 0.2033;
+
+  /**
+   * equirect 는 좌우 끝이 이어져 있다. 가장자리를 넘는 그림은 그냥 그리면
+   * 잘려서 세로 이음매가 생기므로, -W / 0 / +W 세 번 그려 감싸준다.
+   */
+  function wrapX(g, W, fn) {
+    for (const dx of [-W, 0, W]) {
+      g.save(); g.translate(dx, 0); fn(); g.restore();
+    }
+  }
+
+  /** 부드러운 원형 글로우 */
+  function glow(g, x, y, r, color, a0, a1) {
+    const rg = g.createRadialGradient(x, y, 0, x, y, r);
+    rg.addColorStop(0, color.replace('%A%', a0));
+    rg.addColorStop(0.45, color.replace('%A%', a0 * 0.32));
+    rg.addColorStop(1, color.replace('%A%', a1 || 0));
+    g.fillStyle = rg;
+    g.beginPath(); g.arc(x, y, r, 0, 6.28); g.fill();
+  }
+
+  /**
+   * 뭉게구름 한 덩어리. 지평선에 가까울수록 납작하고 작게 그려서
+   * 원근감을 만든다 (하늘 전체에 같은 크기로 뿌리면 벽지처럼 보인다).
+   */
+  function puff(g, x, y, s, flat, alpha, tint) {
+    const lobes = 5 + Math.floor(Math.random() * 4);
+    for (let b = 0; b < lobes; b++) {
+      const t = b / (lobes - 1) - 0.5;
+      const rw = (34 - Math.abs(t) * 30) * s;
+      const rh = rw * (0.52 - flat * 0.3);
+      if (rw < 1 || rh < 1) continue;
+      // 아랫면은 그늘지고 윗면은 햇빛을 받는다
+      const grd = g.createLinearGradient(0, y - rh, 0, y + rh);
+      grd.addColorStop(0, 'rgba(255,255,255,' + alpha + ')');
+      grd.addColorStop(1, tint.replace('%A%', alpha * 0.72));
+      g.fillStyle = grd;
+      g.beginPath();
+      g.ellipse(x + t * 64 * s, y + Math.sin(b * 1.7) * 5 * s, rw, rh, 0, 0, 6.28);
+      g.fill();
+    }
+  }
+
   function skyDome(theme) {
     const W = 1024, H = 512, c = make(W, H), g = c.getContext('2d');
+    const HOR = H / 2;                     // 지평선 행
+
     if (theme === 'circuit') {
-      const grd = g.createLinearGradient(0, 0, 0, H);
-      grd.addColorStop(0, '#1d63b8'); grd.addColorStop(0.45, '#63b7f0');
-      grd.addColorStop(0.72, '#bfe6ff'); grd.addColorStop(1, '#e9f6ff');
-      g.fillStyle = grd; g.fillRect(0, 0, W, H);
-      for (let i = 0; i < 46; i++) {
-        const x = Math.random() * W, y = H * (0.30 + Math.random() * 0.36), s = 0.5 + Math.random();
-        g.fillStyle = 'rgba(255,255,255,' + (0.55 + Math.random() * 0.4) + ')';
-        for (let b = 0; b < 6; b++) {
-          g.beginPath();
-          g.ellipse(x + b * 22 * s - 60 * s, y + Math.sin(b) * 7 * s, (30 - Math.abs(b - 2.5) * 6) * s, (14 - Math.abs(b - 2.5) * 2) * s, 0, 0, 6.28);
-          g.fill();
-        }
+      // 하늘: 천정에서 지평선으로 갈수록 옅어지고, 지평선 근처는 따뜻하게 흐려진다
+      const sky = g.createLinearGradient(0, 0, 0, HOR);
+      sky.addColorStop(0, '#1a5cb4');
+      sky.addColorStop(0.42, '#4f9fe0');
+      sky.addColorStop(0.76, '#a8d8f4');
+      sky.addColorStop(1, '#dfeef6');
+      g.fillStyle = sky; g.fillRect(0, 0, W, HOR);
+
+      // 지면(반사용). 화면에서는 지형에 가려 거의 안 보인다
+      const grd = g.createLinearGradient(0, HOR, 0, H);
+      grd.addColorStop(0, '#6f8a5c'); grd.addColorStop(1, '#33402c');
+      g.fillStyle = grd; g.fillRect(0, HOR - 1, W, H - HOR + 1);
+
+      // 해 + 글로우 (키라이트와 같은 방향). 코어는 좁게, 번짐은 은은하게
+      const sx = SUN_U * W, sy = SUN_V * H;
+      wrapX(g, W, () => {
+        glow(g, sx, sy, 200, 'rgba(255,240,205,%A%)', 0.38);
+        glow(g, sx, sy, 58, 'rgba(255,252,240,%A%)', 0.85);
+        g.fillStyle = 'rgba(255,255,252,0.98)';
+        g.beginPath(); g.arc(sx, sy, 15, 0, 6.28); g.fill();
+      });
+
+      // 지평선 헤이즈 — 먼 하늘이 뿌옇게 깔리는 층
+      const haze = g.createLinearGradient(0, HOR - 95, 0, HOR);
+      haze.addColorStop(0, 'rgba(255,247,232,0)');
+      haze.addColorStop(1, 'rgba(255,247,232,0.55)');
+      g.fillStyle = haze; g.fillRect(0, HOR - 95, W, 95);
+
+      // 구름: 천정 쪽은 크고 둥글게, 지평선 쪽은 작고 납작하게
+      for (let i = 0; i < 54; i++) {
+        const t = Math.pow(Math.random(), 0.55);          // 지평선 쪽에 더 많이
+        const y = 40 + t * (HOR - 70);
+        const flat = t;                                   // 0=천정 1=지평선
+        const s = (1.15 - t * 0.72) * (0.65 + Math.random() * 0.7);
+        const cx = Math.random() * W, ca = 0.62 + Math.random() * 0.33;
+        wrapX(g, W, () => puff(g, cx, y, s, flat, ca, 'rgba(178,200,224,%A%)'));
       }
+      // 해 주변 구름은 역광으로 밝게 터진다
+      g.globalCompositeOperation = 'lighter';
+      wrapX(g, W, () => glow(g, sx, sy, 170, 'rgba(255,238,200,%A%)', 0.22));
+      g.globalCompositeOperation = 'source-over';
+
     } else if (theme === 'bowser') {
-      const grd = g.createLinearGradient(0, 0, 0, H);
-      grd.addColorStop(0, '#12060a'); grd.addColorStop(0.5, '#3a1008');
-      grd.addColorStop(0.82, '#8a2a0c'); grd.addColorStop(1, '#c04a10');
-      g.fillStyle = grd; g.fillRect(0, 0, W, H);
-      for (let i = 0; i < 30; i++) {
-        const x = Math.random() * W, y = H * (0.2 + Math.random() * 0.55), r = 40 + Math.random() * 150;
-        const rg = g.createRadialGradient(x, y, 2, x, y, r);
-        rg.addColorStop(0, 'rgba(60,25,15,0.55)'); rg.addColorStop(1, 'rgba(30,10,6,0)');
+      // 화산재 하늘: 위는 검고 지평선은 용암빛으로 달아오른다
+      const sky = g.createLinearGradient(0, 0, 0, HOR);
+      // 하늘 전체가 밝으면 '노을 진 사막' 이 된다. 이 트랙은 어두운 화산 요새다.
+      // 지평선은 어둡게 깔고, 뜨거운 빛은 아래 화구 글로우로만 국소적으로 넣는다.
+      sky.addColorStop(0, '#080406');
+      sky.addColorStop(0.46, '#250d09');
+      sky.addColorStop(0.82, '#551c0b');
+      sky.addColorStop(1, '#8a330d');
+      g.fillStyle = sky; g.fillRect(0, 0, W, HOR);
+      const grd = g.createLinearGradient(0, HOR, 0, H);
+      grd.addColorStop(0, '#3d180c'); grd.addColorStop(1, '#130806');
+      g.fillStyle = grd; g.fillRect(0, HOR - 1, W, H - HOR + 1);
+
+      // 지평선 여기저기서 올라오는 화구 불빛
+      for (let i = 0; i < 7; i++) {
+        const vx = (i / 7 + Math.random() * 0.09) * W;
+        const vy = HOR - 6 + Math.random() * 20, vr = 120 + Math.random() * 190;
+        wrapX(g, W, () => glow(g, vx, vy, vr, 'rgba(255,124,28,%A%)', 0.62));
+      }
+      // 연기 구름: 아래에서 용암빛을 받는다 (위가 어둡고 아래가 밝다)
+      for (let i = 0; i < 40; i++) {
+        const t = Math.pow(Math.random(), 0.5);
+        const y = 34 + t * (HOR - 56);
+        const s = (1.25 - t * 0.78) * (0.7 + Math.random() * 0.8);
+        const lobes = 5 + Math.floor(Math.random() * 4), x = Math.random() * W;
+        const top = 0.5 + Math.random() * 0.35;
+        wrapX(g, W, () => {
+          for (let b = 0; b < lobes; b++) {
+            const q = b / (lobes - 1) - 0.5;
+            const rw = (36 - Math.abs(q) * 31) * s, rh = rw * (0.5 - t * 0.28);
+            if (rw < 1 || rh < 1) continue;
+            const cg = g.createLinearGradient(0, y - rh, 0, y + rh);
+            cg.addColorStop(0, 'rgba(26,14,12,' + top + ')');
+            cg.addColorStop(1, 'rgba(188,74,20,' + (0.30 + t * 0.34) + ')');
+            g.fillStyle = cg;
+            g.beginPath(); g.ellipse(x + q * 68 * s, y + Math.sin(b * 1.7) * 5 * s, rw, rh, 0, 0, 6.28);
+            g.fill();
+          }
+        });
+      }
+      // 떠오르는 불티
+      for (let i = 0; i < 150; i++) {
+        const y = HOR * (0.35 + Math.random() * 0.64);
+        g.fillStyle = 'rgba(255,' + (140 + Math.random() * 80 | 0) + ',60,' + (0.15 + Math.random() * 0.45) + ')';
+        g.beginPath(); g.arc(Math.random() * W, y, 0.8 + Math.random() * 2.2, 0, 6.28); g.fill();
+      }
+
+    } else {
+      // 우주: 은하수 띠 + 성운 + 별
+      g.fillStyle = '#04030c'; g.fillRect(0, 0, W, H);
+
+      // 은하수 — 비스듬히 가로지르는 밝은 띠
+      g.save();
+      g.translate(W * 0.5, H * 0.42); g.rotate(-0.34);
+      for (let i = 0; i < 130; i++) {
+        const x = (Math.random() - 0.5) * W * 1.5;
+        const y = (Math.random() - 0.5) * 150 * (1 - Math.abs(x) / (W * 0.9));
+        const r = 30 + Math.random() * 120;
+        const rg = g.createRadialGradient(x, y, 0, x, y, r);
+        const hue = 232 + Math.random() * 70;
+        rg.addColorStop(0, 'hsla(' + hue + ',70%,72%,0.072)');
+        rg.addColorStop(1, 'hsla(' + hue + ',70%,72%,0)');
         g.fillStyle = rg; g.beginPath(); g.arc(x, y, r, 0, 6.28); g.fill();
       }
-      for (let i = 0; i < 90; i++) {
-        const x = Math.random() * W, y = H * (0.55 + Math.random() * 0.4);
-        g.fillStyle = 'rgba(255,150,50,' + (0.1 + Math.random() * 0.3) + ')';
-        g.beginPath(); g.arc(x, y, 1 + Math.random() * 2.4, 0, 6.28); g.fill();
-      }
-    } else {
-      g.fillStyle = '#04030c'; g.fillRect(0, 0, W, H);
-      for (let i = 0; i < 90; i++) {
-        const x = Math.random() * W, y = Math.random() * H, r = 40 + Math.random() * 190;
+      g.restore();
+
+      // 큰 성운
+      for (let i = 0; i < 52; i++) {
+        const x = Math.random() * W, y = Math.random() * H, r = 50 + Math.random() * 210;
         const rg = g.createRadialGradient(x, y, 0, x, y, r);
         const hue = 215 + Math.random() * 130;
-        rg.addColorStop(0, 'hsla(' + hue + ',85%,58%,0.20)');
+        rg.addColorStop(0, 'hsla(' + hue + ',85%,58%,0.125)');
         rg.addColorStop(1, 'hsla(' + hue + ',85%,58%,0)');
         g.fillStyle = rg; g.beginPath(); g.arc(x, y, r, 0, 6.28); g.fill();
       }
-      for (let i = 0; i < 2600; i++) {
-        const x = Math.random() * W, y = Math.random() * H, r = Math.random() * 1.5;
+      // 넓고 부드러운 성운 그라데이션은 8비트에서 띠지므로 미세 노이즈로 디더링한다
+      valueNoise(g, W, H, 3, 0.05);
+
+      // 잔별 — 은하수 띠 근처에 더 촘촘하게
+      for (let i = 0; i < 3000; i++) {
+        const x = Math.random() * W;
+        let y = Math.random() * H;
+        if (Math.random() < 0.45) {
+          const band = H * 0.42 - (x - W * 0.5) * 0.35;
+          y = band + (Math.random() - 0.5) * 160;
+          if (y < 0 || y > H) continue;
+        }
+        const r = Math.random() * 1.5;
         const t = Math.random();
         g.fillStyle = t < 0.62 ? 'rgba(255,255,255,' + (0.4 + Math.random() * 0.6) + ')'
           : (t < 0.84 ? 'rgba(170,205,255,0.85)' : 'rgba(255,190,225,0.8)');
         g.beginPath(); g.arc(x, y, r, 0, 6.28); g.fill();
       }
-      for (let i = 0; i < 40; i++) {
+      // 밝은 별 + 십자 섬광
+      for (let i = 0; i < 44; i++) {
         const x = Math.random() * W, y = Math.random() * H;
-        g.fillStyle = 'rgba(255,255,255,0.9)';
+        glow(g, x, y, 16, 'rgba(200,225,255,%A%)', 0.5);
+        g.fillStyle = 'rgba(255,255,255,0.95)';
         g.beginPath(); g.arc(x, y, 1.6 + Math.random() * 1.4, 0, 6.28); g.fill();
         g.strokeStyle = 'rgba(255,255,255,0.35)'; g.lineWidth = 1;
-        g.beginPath(); g.moveTo(x - 7, y); g.lineTo(x + 7, y); g.moveTo(x, y - 7); g.lineTo(x, y + 7); g.stroke();
+        g.beginPath(); g.moveTo(x - 8, y); g.lineTo(x + 8, y); g.moveTo(x, y - 8); g.lineTo(x, y + 8); g.stroke();
       }
     }
     return c;
