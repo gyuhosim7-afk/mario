@@ -196,6 +196,8 @@
     return j;
   }
 
+  function null_face() { return { lids: [], brows: [] }; }
+
   function buildCharacter(ch) {
     // assets/manifest.json 에 등록된 외부 모델이 있으면 그걸 쓴다
     const ext = global.Assets && global.Assets.character(ch.id);
@@ -360,17 +362,48 @@
       arms.push({ shoulder, upper, elbow, fore, hand: handTip, side: sd, a: upperLen, b: foreLen });
     });
 
-    /* ---------- 눈 ---------- */
+    /* ---------- 눈 · 눈꺼풀 · 눈썹 ---------- */
+    // 표정이 고정돼 있으면 아무리 잘 렌더해도 인형으로 보인다.
+    // 눈꺼풀과 눈썹을 따로 관절로 달아 주행 중 상태에 따라 움직이게 한다 (js/rig.js).
+    const face = null_face();
     if (ch.id !== 'volt') {
       // 눈은 젖은 표면이다. 여기에 또렷한 하이라이트가 하나 박히면 즉시 살아 있는 캐릭터로 읽힌다
       const eyeMat = mat('#ffffff', { rough: 0.05, envI: 2.2, coat: 1, coatRough: 0.02 });
       const pupilMat = mat(c.eye, { rough: 0.06, envI: 2.0, coat: 1, coatRough: 0.03 });
+      // 눈썹은 표정을 가장 강하게 드러내는 부위다. 또렷하게 보이도록 어둡고 굵게.
+      const browMat = mat(c.eye, { rough: 0.55, envI: 0.6 });
+      const eyeR = 1.95 * S;
       [-1, 1].forEach(sd => {
-        const e = sphere(1.95 * S, eyeMat, front * 0.74, hc + headR * 0.14, sd * headR * 0.4, 12);
+        const ex = front * 0.74, ey = hc + headR * 0.14, ez = sd * headR * 0.4;
+        const e = sphere(eyeR, eyeMat, ex, ey, ez, 12);
         e.scale.set(0.55, 1.05, 1); headJ.add(e);
         const pu = sphere(0.95 * S, pupilMat, front * 0.94, hc + headR * 0.12, sd * headR * 0.42, 10);
         pu.scale.set(0.55, 1.05, 1); headJ.add(pu);
         headJ.add(sphere(0.42 * S, mat('#ffffff', { rough: 0.1 }), front * 1.02, hc + headR * 0.34, sd * headR * 0.5, 8));
+
+        // 눈꺼풀: 눈알을 감싸는 위쪽 반구 껍질. 눈 중심을 축으로 돌려 덮는다
+        const lidJ = joint(ex, ey, ez, 'lid');
+        lidJ.userData.joint = true;               // 병합 경계 (움직여야 하므로)
+        headJ.add(lidJ);
+        const lid = mesh(geo('lid' + eyeR.toFixed(2), () =>
+          new T.SphereGeometry(eyeR * 1.13, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.62)), body);
+        lid.scale.set(0.56, 1.05, 1.02);
+        lidJ.add(lid);
+        // +z 가 눈을 덮는 방향이다 (렌더로 확인). 기본은 살짝 열린 눈매
+        lidJ.rotation.z = -0.10;
+
+        // 눈썹
+        const browJ = joint(front * 0.86, ey + headR * 0.30, ez, 'brow');
+        browJ.userData.joint = true;
+        headJ.add(browJ);
+        // rounded() 는 마지막에 rotateX(90도) 를 하므로 인자는 (x, z, y) 순으로 먹는다.
+        // 눈썹은 좌우로 길고 앞뒤·위아래로 얇아야 한다.
+        const brow = rounded(1.15 * S, 4.2 * S, 1.05 * S, 0.42 * S, browMat);
+        brow.rotation.x = sd * 0.18;              // 기본: 바깥쪽이 살짝 처진 순한 눈썹
+        browJ.add(brow);
+
+        face.lids.push({ node: lidJ, side: sd, rest: -0.10 });
+        face.brows.push({ node: browJ, side: sd, baseY: browJ.position.y });
       });
     }
 
@@ -572,7 +605,7 @@
 
     root.userData.scaleClass = S;
     root.userData.rig = {
-      pelvis, torso, head: headJ, arms, legs, wobblers,
+      pelvis, torso, head: headJ, arms, legs, wobblers, face,
       restTorso: { x: 0, z: 0 }, S,
       shoulderLocal: arms.map(a => a.shoulder.position.clone())
     };

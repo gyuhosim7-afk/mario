@@ -71,6 +71,8 @@
         pitch: 0, vp: 0, roll: 0, vr: 0, heave: 0, vh: 0,
         tp: 0, vtp: 0, tr: 0, vtr: 0, bob: 0, vbob: 0,
         headY: 0, vhy: 0, nod: 0, vnod: 0, tilt: 0, vtilt: 0,
+        lid: 0, vlid: 0, brY: 0, vbrY: 0, brA: 0, vbrA: 0,
+        blinkT: 1.2 + (k.id || 0) * 0.73, blinkP: 0,
         st: 0, vst: 0, prevSpeed: 0, prevZ: 0, acc: 0, hurtT: 0, mix: 0
       });
 
@@ -158,6 +160,43 @@
       // 목도 코너 쪽으로 살짝 기운다
       spring(S, 'tilt', 'vtilt', steerAng * 0.14 * (1 - mix), 90, 13, dt);
       rig.head.rotation.x = S.tilt;
+
+      /* ---- 표정: 눈꺼풀 + 눈썹 ----
+       * 얼굴이 고정돼 있으면 아무리 잘 렌더해도 인형으로 보인다.
+       * 눈꺼풀 rotation.z 는 + 가 감는 방향, 눈썹은 side*(-) 가 화난 각도다 (렌더로 확인).
+       */
+      const face = rig.face;
+      if (face && face.lids.length) {
+        // 깜빡임: 몇 초에 한 번, 0.16초 동안 감았다 뜬다. 캐릭터마다 주기를 어긋나게 한다
+        S.blinkT -= dt;
+        if (S.blinkT <= 0) { S.blinkT = 2.6 + Math.random() * 3.6; S.blinkP = 0.16; }
+        if (S.blinkP > 0) S.blinkP -= dt;
+        const blink = S.blinkP > 0
+          ? Math.sin((0.16 - S.blinkP) / 0.16 * Math.PI) * (1 - mix) : 0;
+
+        // 기본 표정: 빠를수록 바람에 눈을 가늘게 뜬다
+        let lidT = 0.04 + sr * 0.17;
+        let brY = 0, brA = 0;
+        if (k.boostTimer > 0) { lidT += 0.13; brA -= 0.30; brY -= 0.5; }   // 결연
+        if (k.drifting) { brA -= 0.26; brY -= 0.35; }
+        if (mix > 0.002) {
+          // 피격: 눈을 크게 뜨고 눈썹이 확 올라간다 (놀람)
+          lidT += (-0.45 - lidT) * mix;
+          brY += (1.5 - brY) * mix;   // 너무 올리면 고글·뿔 같은 머리 장식과 겹친다
+          brA += (0.45 - brA) * mix;
+        }
+        spring(S, 'lid', 'vlid', lidT, 140, 18, dt);
+        spring(S, 'brY', 'vbrY', brY, 120, 16, dt);
+        spring(S, 'brA', 'vbrA', brA, 110, 15, dt);
+
+        // 깜빡임은 스프링 밖에서 더한다 (스프링을 통과시키면 뭉개진다)
+        const lidNow = S.lid + blink * (0.92 - S.lid);
+        for (const l of face.lids) l.node.rotation.z = l.rest + lidNow;
+        for (const w of face.brows) {
+          w.node.position.y = w.baseY + S.brY;
+          w.node.rotation.x = w.side * S.brA;
+        }
+      }
 
       /* ---- 2차 모션: 귀 / 꼬리 / 스카프 / 안테나 ---- */
       if (rig.wobblers && rig.wobblers.length) {
