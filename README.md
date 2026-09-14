@@ -5,6 +5,28 @@
 > 설치도 다운로드도 필요 없습니다. 링크를 열면 로비가 뜨고, 카트를 고르고
 > `GAME START` 를 누르면 바로 달립니다. PC 는 방향키, 모바일은 화면 터치로 조작합니다.
 
+<details>
+<summary><b>웹에 올리는 법 (저장소 설정 한 번만)</b></summary>
+
+이 게임은 빌드가 필요 없는 정적 사이트라서, 저장소를 그대로 서빙하면 끝입니다.
+
+1. 저장소 **Settings** → 왼쪽 **Pages**
+2. **Build and deployment → Source** 를 `Deploy from a branch` 로
+3. **Branch** 를 `claude/mario-kart-game-gdaa1e` / `/ (root)` 로 두고 **Save**
+4. 1~2분 뒤 `https://gyuhosim7-afk.github.io/mario/` 가 열립니다
+
+이후 이 브랜치에 푸시할 때마다 자동으로 다시 배포됩니다.
+
+`.nojekyll` 이 저장소 루트에 있어야 GitHub 이 Jekyll 전처리를 건너뛰고 파일을
+그대로 올립니다 (이미 포함돼 있습니다).
+
+> Source 를 `GitHub Actions` 로 쓰고 싶다면 `.github/workflows/pages.yml` 이
+> 준비돼 있습니다. 그 경우 Actions 탭에서 한 번 `Run workflow` 하세요.
+> (`GITHUB_TOKEN` 으로는 Pages 를 처음 켜는 것이 불가능해서, 어느 쪽이든
+> 위 설정 화면은 한 번 들러야 합니다.)
+
+</details>
+
 
 브라우저에서 바로 실행되는 아케이드 3D 카트 레이싱 게임.
 캐릭터 · 카트 · 트랙 · 아이템 모두 **오리지널 디자인**입니다.
