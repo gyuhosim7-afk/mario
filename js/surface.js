@@ -30,8 +30,10 @@ float sdNoise(vec3 x) {
     mix(mix(sdHash(i + vec3(0,0,1)),   sdHash(i + vec3(1,0,1)), f.x),
         mix(sdHash(i + vec3(0,1,1)),   sdHash(i + vec3(1,1,1)), f.x), f.y), f.z);
 }
+// 옥타브 2개면 충분하다. 3개째는 화면에서 거의 구분되지 않는데
+// 픽셀당 해시 호출이 8번 더 늘어난다 (내장 그래픽에서 체감된다).
 float sdFbm(vec3 p) {
-  return sdNoise(p) * 0.60 + sdNoise(p * 2.9) * 0.27 + sdNoise(p * 7.7) * 0.13;
+  return sdNoise(p) * 0.66 + sdNoise(p * 3.1) * 0.34;
 }`;
 
   const PATCH = `

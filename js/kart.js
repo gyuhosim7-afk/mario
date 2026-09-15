@@ -384,15 +384,21 @@
 
       /* ---- 조향 ---- */
       const speedF = Math.min(1, Math.abs(this.speed) / (ph.maxSpeed * 0.42));
+      // 빠를수록 조향각이 줄어든다. 이걸 빼먹으면 고속에서 제자리 팽이가 된다.
+      const hiSpeed = 1 - Math.min(0.42, Math.abs(this.speed) / ph.maxSpeed * 0.42);
       let steer = inp.steer;
       let turn;
       if (this.drifting) {
-        // 드리프트 중에는 안쪽으로 고정 + 입력으로 미세 조정
-        const bias = this.driftDir * 0.62 + steer * 0.42;
-        turn = ph.steerRate * 1.32 * bias * speedF;
-        this.vlat += this.driftDir * this.speed * 0.9 * dt;
+        // 드리프트 중에는 안쪽으로 고정 + 입력으로 미세 조정.
+        // 일반 조향과 같은 고속 감쇠를 반드시 함께 건다.
+        const bias = this.driftDir * 0.58 + steer * 0.42;
+        turn = ph.steerRate * 1.15 * bias * speedF * hiSpeed;
+        // 뒷바퀴가 바깥으로 흐른다. 드리프트의 본질은 '차체는 안쪽을 향하는데
+        // 경로는 넓게 유지되는 것' 이다. 안쪽(+driftDir)으로 주면 회전과 이동이
+        // 같은 방향으로 겹쳐 반경이 무너진다.
+        this.vlat -= this.driftDir * this.speed * 0.55 * dt;
       } else {
-        turn = ph.steerRate * steer * speedF * (1 - Math.min(0.42, Math.abs(this.speed) / ph.maxSpeed * 0.42));
+        turn = ph.steerRate * steer * speedF * hiSpeed;
       }
       if (this.speed < 0) turn = -turn;
       this.angle += turn * dt / Math.max(0.4, ph.inertia);

@@ -264,6 +264,8 @@
       this._itemTpl = {};
       this._composerOn = true;
       // 적응형 품질: 프레임레이트가 낮으면 블룸/그림자/해상도를 단계적으로 낮춘다
+      // 소프트웨어 렌더링(하드웨어 가속 꺼짐)은 gpuInfo() 로 판별해 setTrack 에서
+      // 즉시 최저로 내린다. 그 전까지는 최고로 시작해 빠른 기기에서 손해보지 않는다.
       this.quality = 3;
       this.qualityMode = 'auto';        // 'auto' | 0~3 고정
       this._baseDpr = Math.min(2, window.devicePixelRatio || 1);
@@ -335,18 +337,38 @@
       if (window.console) console.info('[render] quality level ->', q);
     }
 
+    /**
+     * 프레임레이트 적응.
+     *
+     *  · 떨어질 때는 빨리(0.6초 창), 올라갈 때는 천천히(1.6초 창 x 3회) 판단한다.
+     *    빨리 못 내려가면 버벅이는 시간이 그대로 체감되고, 빨리 올라가면
+     *    올렸다 내렸다를 반복하며 더 거슬린다.
+     *  · 많이 모자라면 한 번에 여러 단계를 내린다. 20fps 인데 한 단계씩 내리면
+     *    바닥에 닿을 때까지 몇 초를 버벅인다.
+     *  · 목표는 60fps 다. 45fps 도 레이싱 게임에서는 끊겨 보이므로 강등한다.
+     */
     _adapt(dt) {
       const p = this._perf;
       p.acc += dt; p.frames++;
       p.ms = p.ms * 0.9 + dt * 1000 * 0.1;
-      if (p.acc < 1.4) return;
+      const win = p.pending ? 0.6 : 1.6;
+      if (p.acc < win) return;
       const fps = p.frames / p.acc;
       p.fps = fps;
       p.acc = 0; p.frames = 0;
       if (this.qualityMode !== 'auto') return;      // 수동 고정이면 강등하지 않는다
-      if (fps < 36 && this.quality > 0) { this.setQuality(this.quality - 1); p.good = 0; }
-      else if (fps > 57 && this.quality < 3) { if (++p.good >= 4) { this.setQuality(this.quality + 1); p.good = 0; } }
-      else p.good = 0;
+
+      if (fps < 48 && this.quality > 0) {
+        // 얼마나 모자라는지에 따라 한 번에 1~3단계 강등
+        const drop = fps < 22 ? 3 : (fps < 34 ? 2 : 1);
+        this.setQuality(this.quality - drop);
+        p.good = 0; p.pending = true;               // 다음 판정을 짧은 창으로
+      } else if (fps > 58 && this.quality < 3) {
+        p.pending = false;
+        if (++p.good >= 3) { this.setQuality(this.quality + 1); p.good = 0; }
+      } else {
+        p.good = 0; p.pending = false;
+      }
     }
 
     resize(w, h) {
@@ -741,6 +763,7 @@
       const model = global.Models.buildKart(kart.combo);
       const grp = new T.Group();
       grp.add(model);
+      // 원경용 저폴리 모델. 지연 생성해서 로딩을 늘리지 않는다 (처음 멀어질 때 만든다).
       this.scene.add(grp);
       // 접지 그림자 보조 (블롭)
       const blob = new T.Mesh(
@@ -752,16 +775,37 @@
       );
       blob.rotation.x = -Math.PI / 2;
       this.scene.add(blob);
-      const node = { group: grp, model, blob, kart, aura: null };
+      const node = { group: grp, model, lod: null, lodOn: false, blob, kart, aura: null };
       this.kartNodes.set(kart, node);
       kart.model3d = node;
       return node;
     }
 
     _syncKart(node, dt) {
-      const k = node.kart, g = node.group, m = node.model;
-      // 멀리 있는 카트는 그림자 캐스팅을 끈다 (섀도 패스 드로우콜 절감)
+      const k = node.kart;
+      const g = node.group;
       const camD = Math.hypot(k.x - this.camera.x, k.y - this.camera.y);
+
+      /* ---- LOD: 멀어지면 저폴리 통합 모델로 갈아끼운다 ----
+       * 근경 카트는 44 드로우콜 / 21,500 삼각형이다. 화면에서 몇 픽셀인
+       * 원경 카트까지 그렇게 그릴 이유가 없다. 히스테리시스를 둬서
+       * 경계에서 깜빡이지 않게 한다. */
+      const wantLod = this.quality < 3
+        ? camD > (node.lodOn ? 300 : 340)
+        : camD > (node.lodOn ? 480 : 540);
+      if (wantLod && !node.lod) {
+        try { node.lod = global.Models.buildKartLOD(k.combo); g.add(node.lod); node.lod.visible = false; }
+        catch (e) { node.lod = null; }
+      }
+      if (node.lod && wantLod !== node.lodOn) {
+        node.lodOn = wantLod;
+        node.model.visible = !wantLod;
+        node.lod.visible = wantLod;
+        node._cast = null;                 // 그림자 플래그를 새 모델에 다시 적용
+      }
+      const m = (node.lodOn && node.lod) ? node.lod : node.model;
+
+      // 멀리 있는 카트는 그림자 캐스팅을 끈다 (섀도 패스 드로우콜 절감)
       const cast = camD < 620;
       if (node._cast !== cast) {
         node._cast = cast;
@@ -783,18 +827,22 @@
         m.rotation.x += ((k.airborne ? -0.2 : lean) - m.rotation.x) * Math.min(1, dt * 8);
       }
 
-      // 드라이버 착좌 리그 (팔 IK · 상체 롤 · 머리) — 멀리 있는 카트는 생략
-      if (global.Rig && m.userData.rig && camD < 700) global.Rig.update(m, k, dt, this.time);
+      // LOD 모델은 관절이 통째로 병합돼 있어 리그·바퀴를 돌려봐야 화면에
+      // 반영되지 않는다. 계산 자체를 건너뛴다 (원경 카트의 CPU 비용 0).
+      if (!node.lodOn) {
+        // 드라이버 착좌 리그 (팔 IK · 상체 롤 · 머리) — 멀리 있는 카트는 생략
+        if (global.Rig && m.userData.rig && camD < 700) global.Rig.update(m, k, dt, this.time);
 
-      // 바퀴 회전 / 조향
-      // 프레임당 회전각이 커지면 스포크가 역회전하는 것처럼 보인다(웨건휠).
-      // 고속에서는 각속도를 부드럽게 포화시켜 잔상 대신 흐름으로 읽히게 한다.
-      const raw = k.speed * dt * 0.14;
-      const spin = raw < 0.34 ? raw : 0.34 + (raw - 0.34) * 0.18;
-      for (const w of m.userData.wheels) w.rotation.z -= spin;
-      const steerAng = (k.input.steer || 0) * 0.4 + (k.drifting ? k.driftDir * 0.25 : 0);
-      for (const w of m.userData.frontWheels) w.rotation.y = -steerAng;
-      if (m.userData.steer && !m.userData.rig) m.userData.steer.rotation.z = 0.55 + steerAng * 0.9;
+        // 바퀴 회전 / 조향
+        // 프레임당 회전각이 커지면 스포크가 역회전하는 것처럼 보인다(웨건휠).
+        // 고속에서는 각속도를 부드럽게 포화시켜 잔상 대신 흐름으로 읽히게 한다.
+        const raw = k.speed * dt * 0.14;
+        const spin = raw < 0.34 ? raw : 0.34 + (raw - 0.34) * 0.18;
+        for (const w of m.userData.wheels) w.rotation.z -= spin;
+        const steerAng = (k.input.steer || 0) * 0.4 + (k.drifting ? k.driftDir * 0.25 : 0);
+        for (const w of m.userData.frontWheels) w.rotation.y = -steerAng;
+        if (m.userData.steer && !m.userData.rig) m.userData.steer.rotation.z = 0.55 + steerAng * 0.9;
+      }
 
       // 무적 점멸 / 스타 오라
       const blink = k.invulnTimer > 0 && k.state !== 'RESPAWN' && Math.floor(this.time * 14) % 2 === 0;

@@ -11,6 +11,18 @@
 
   /* ---------------- 공용 헬퍼 ---------------- */
   const geoCache = {};
+
+  /**
+   * 원경용 저폴리 모드.
+   *
+   * 멀리 있는 카트는 화면에서 몇 픽셀밖에 안 되는데 근경과 똑같이
+   * 21,500 삼각형 / 44 드로우콜을 쓴다. LOD 가 켜지면 모든 회전체·구·원통의
+   * 분할 수를 절반으로 줄이고, 관절 경계를 없애 통째로 병합한다.
+   * geoCache 키에 접두사가 붙으므로 근경 지오메트리와 섞이지 않는다.
+   */
+  let LOD = 0;
+  const seg = (n) => (LOD ? Math.max(4, Math.round(n * 0.45)) : n);
+  const gkey = (k) => (LOD ? 'L' + k : k);
   function geo(key, factory) {
     if (!geoCache[key]) geoCache[key] = factory();
     return geoCache[key];
@@ -53,28 +65,33 @@
     s.castShadow = true; s.receiveShadow = true;
     return s;
   }
-  function sphere(r, m, x, y, z, seg) {
-    return mesh(geo('sph' + (seg || 20) + '_' + r.toFixed(2), () => new T.SphereGeometry(r, seg || 20, Math.round((seg || 20) * 0.72))), m, x, y, z);
+  function sphere(r, m, x, y, z, s0) {
+    const q = seg(s0 || 20);
+    return mesh(geo(gkey('sph' + q + '_' + r.toFixed(2)),
+      () => new T.SphereGeometry(r, q, Math.max(3, Math.round(q * 0.72)))), m, x, y, z);
   }
   function box(w, h, d, m, x, y, z) {
     return mesh(geo('box' + [w, h, d].join('_'), () => new T.BoxGeometry(w, h, d)), m, x, y, z);
   }
-  function cyl(rt, rb, h, m, x, y, z, seg) {
-    return mesh(geo('cyl' + [rt, rb, h, seg || 16].join('_'), () => new T.CylinderGeometry(rt, rb, h, seg || 16)), m, x, y, z);
+  function cyl(rt, rb, h, m, x, y, z, s0) {
+    const q = seg(s0 || 16);
+    return mesh(geo(gkey('cyl' + [rt, rb, h, q].join('_')), () => new T.CylinderGeometry(rt, rb, h, q)), m, x, y, z);
   }
-  function cone(r, h, m, x, y, z, seg) {
-    return mesh(geo('cone' + [r, h, seg || 12].join('_'), () => new T.ConeGeometry(r, h, seg || 12)), m, x, y, z);
+  function cone(r, h, m, x, y, z, s0) {
+    const q = seg(s0 || 12);
+    return mesh(geo(gkey('cone' + [r, h, q].join('_')), () => new T.ConeGeometry(r, h, q)), m, x, y, z);
   }
   function capsule(r, len, m, x, y, z) {
-    return mesh(geo('cap' + r + '_' + len, () => new T.CapsuleGeometry(r, len, 6, 14)), m, x, y, z);
+    return mesh(geo(gkey('cap' + r + '_' + len),
+      () => new T.CapsuleGeometry(r, len, seg(6), seg(14))), m, x, y, z);
   }
   function torus(r, tube, m, x, y, z, arc) {
-    return mesh(geo('tor' + [r, tube, arc || 6.283].join('_'),
-      () => new T.TorusGeometry(r, tube, 10, 26, arc || Math.PI * 2)), m, x, y, z);
+    return mesh(geo(gkey('tor' + [r, tube, arc || 6.283].join('_')),
+      () => new T.TorusGeometry(r, tube, seg(10), seg(26), arc || Math.PI * 2)), m, x, y, z);
   }
   function rounded(w, h, d, r, m) {
     // 베벨 처리된 판 형태 (ExtrudeGeometry)
-    const key = 'rnd' + [w, h, d, r].join('_');
+    const key = gkey('rnd' + [w, h, d, r].join('_'));
     const g = geo(key, () => {
       const s = new T.Shape();
       const hw = w / 2 - r, hh = h / 2 - r;
@@ -87,7 +104,7 @@
       s.quadraticCurveTo(-w / 2, h / 2, -w / 2, hh);
       s.lineTo(-w / 2, -hh);
       s.quadraticCurveTo(-w / 2, -h / 2, -hw, -h / 2);
-      const gg = new T.ExtrudeGeometry(s, { depth: d, bevelEnabled: true, bevelSize: r * 0.4, bevelThickness: r * 0.4, bevelSegments: 2, curveSegments: 6 });
+      const gg = new T.ExtrudeGeometry(s, { depth: d, bevelEnabled: true, bevelSize: r * 0.4, bevelThickness: r * 0.4, bevelSegments: LOD ? 1 : 2, curveSegments: seg(6) });
       gg.translate(0, 0, -d / 2);
       gg.rotateX(Math.PI / 2);
       return gg;
@@ -95,11 +112,12 @@
     return mesh(g, m);
   }
   /** 회전체(lathe): [[반지름, 높이], ...] 프로파일을 돌려 유기적인 덩어리를 만든다 */
-  function lathe(profile, m, seg) {
-    const key = 'lathe' + profile.map(p => p.join(',')).join('|') + (seg || 24);
+  function lathe(profile, m, segs) {
+    const q = seg(segs || 24);
+    const key = gkey('lathe' + profile.map(p => p.join(',')).join('|') + q);
     const g = geo(key, () => {
       const pts = profile.map(p => new T.Vector2(Math.max(0.001, p[0]), p[1]));
-      const gg = new T.LatheGeometry(pts, seg || 24);
+      const gg = new T.LatheGeometry(pts, q);
       gg.computeVertexNormals();
       return gg;
     });
@@ -111,14 +129,14 @@
    * 원통 + 양 끝 반구를 하나의 지오메트리로 구워 드로우콜을 늘리지 않는다.
    */
   function taperBone(len, r0, r1, m) {
-    const key = 'tbone' + [len, r0, r1].map(v => v.toFixed(2)).join('_');
+    const key = gkey('tbone' + [len, r0, r1].map(v => v.toFixed(2)).join('_'));
     const g = geo(key, () => {
       const BGU = T.BufferGeometryUtils;
-      const shaft = new T.CylinderGeometry(r1, r0, len, 20, 1, true);
+      const shaft = new T.CylinderGeometry(r1, r0, len, seg(20), 1, true);
       shaft.translate(0, len / 2, 0);
       if (!BGU || !BGU.mergeGeometries) return shaft;
-      const capA = new T.SphereGeometry(r0, 20, 12);
-      const capB = new T.SphereGeometry(r1, 20, 12);
+      const capA = new T.SphereGeometry(r0, seg(20), seg(12));
+      const capB = new T.SphereGeometry(r1, seg(20), seg(12));
       capB.translate(0, len, 0);
       const parts = [shaft, capA, capB].map(x => {
         const nx = x.index ? x.toNonIndexed() : x;
@@ -825,9 +843,25 @@
     wheels.forEach(w => { w.userData.baseY = w.position.y; });
 
     g.userData.dims = { L, W, wr };
-    // 파츠 사이 틈을 어둡게 굽는다 (목/겨드랑이/바퀴집/시트 뒤)
-    optimize(g, { ao: true });
+    if (LOD) {
+      // 원경용: 관절 경계를 모두 없애 머티리얼 단위로만 병합한다.
+      // 멀리서는 팔도 바퀴도 움직이지 않으므로 나눠둘 이유가 없다.
+      // AO 도 굽지 않는다 (몇 픽셀짜리에 들일 비용이 아니다).
+      g.traverse(o => { o.userData.joint = false; o.userData.dynamic = false; });
+      optimize(g);
+      g.userData.lod = true;
+    } else {
+      // 파츠 사이 틈을 어둡게 굽는다 (목/겨드랑이/바퀴집/시트 뒤)
+      optimize(g, { ao: true });
+    }
     return g;
+  }
+
+  /** 원경용 저폴리 카트. 분할 수를 절반으로 줄이고 통째로 병합한다. */
+  function buildKartLOD(combo) {
+    const prev = LOD;
+    LOD = 1;
+    try { return buildKart(combo); } finally { LOD = prev; }
   }
 
   /**
@@ -1619,5 +1653,5 @@
     return g;
   }
 
-  global.Models = { buildKart, optimize, buildGantry, buildBackdrop, buildHorizon, lathe, taperBone, buildCharacter, buildItem, buildProp, buildLandmark, mat, mesh, sphere, box, cyl, cone, rounded, starShape, torus, geo };
+  global.Models = { buildKart, buildKartLOD, optimize, buildGantry, buildBackdrop, buildHorizon, lathe, taperBone, buildCharacter, buildItem, buildProp, buildLandmark, mat, mesh, sphere, box, cyl, cone, rounded, starShape, torus, geo };
 })(window);
