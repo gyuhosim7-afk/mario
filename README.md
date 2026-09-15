@@ -8,22 +8,24 @@
 <details>
 <summary><b>웹에 올리는 법 (저장소 설정 한 번만)</b></summary>
 
-이 게임은 빌드가 필요 없는 정적 사이트라서, 저장소를 그대로 서빙하면 끝입니다.
+빌드 과정이 없는 정적 사이트라 저장소를 그대로 올립니다.
+**이미 설정돼 있고, 이 브랜치에 푸시하면 자동으로 재배포됩니다.**
 
 1. 저장소 **Settings** → 왼쪽 **Pages**
-2. **Build and deployment → Source** 를 `Deploy from a branch` 로
-3. **Branch** 를 `claude/mario-kart-game-gdaa1e` / `/ (root)` 로 두고 **Save**
-4. 1~2분 뒤 `https://gyuhosim7-afk.github.io/mario/` 가 열립니다
+2. **Build and deployment → Source** 를 **`GitHub Actions`** 로
+3. 끝. 이후 푸시할 때마다 `.github/workflows/pages.yml` 이 돌면서 배포합니다
 
-이후 이 브랜치에 푸시할 때마다 자동으로 다시 배포됩니다.
+`Deploy from a branch` 는 쓰지 않습니다. 이 저장소의 기본 브랜치 이름에
+슬래시가 들어 있어서(`claude/mario-kart-game-gdaa1e`) 그쪽으로 설정하면
+GitHub 이 빌드를 아예 돌리지 않았습니다 — Actions 기록에
+`pages-build-deployment` 실행이 한 건도 생기지 않았습니다.
 
-`.nojekyll` 이 저장소 루트에 있어야 GitHub 이 Jekyll 전처리를 건너뛰고 파일을
-그대로 올립니다 (이미 포함돼 있습니다).
+> `GITHUB_TOKEN` 으로는 Pages 를 처음 켤 수 없습니다
+> (`Resource not accessible by integration`). 그래서 `configure-pages` 의
+> `enablement` 옵션은 쓰지 않고, 위 2번은 사람이 한 번 눌러야 합니다.
 
-> Source 를 `GitHub Actions` 로 쓰고 싶다면 `.github/workflows/pages.yml` 이
-> 준비돼 있습니다. 그 경우 Actions 탭에서 한 번 `Run workflow` 하세요.
-> (`GITHUB_TOKEN` 으로는 Pages 를 처음 켜는 것이 불가능해서, 어느 쪽이든
-> 위 설정 화면은 한 번 들러야 합니다.)
+`.nojekyll` 은 저장소 루트에 있습니다. Actions 배포 경로에서는 Jekyll 이
+돌지 않지만, 나중에 브랜치 배포로 바꿀 때를 대비해 남겨둡니다.
 
 </details>
 
