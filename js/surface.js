@@ -52,7 +52,8 @@ float sdFbm(vec3 p) {
   // 품질 단계별로 켜고 끌 수 있도록 패치한 머티리얼을 기억해 둔다.
   // 0 = 최소(디테일·시언 없음) / 1 = 시언만 / 2 이상 = 전부
   const _patched = [];
-  const _sheened = [];
+  const _sheened = [];      // sheen 을 쓰는 머티리얼
+  const _coated = [];       // clearcoat 을 쓰는 머티리얼
   let _level = 2;
 
   function _applyOne(e) {
@@ -63,21 +64,36 @@ float sdFbm(vec3 p) {
   const _noop = function () {};
   const _offKey = function () { return 'sd-off'; };
 
-  /** 렌더러 품질 단계에 맞춰 표면 디테일과 시언을 켜고 끈다 (셰이더를 다시 컴파일한다) */
+  /**
+   * 렌더러 품질 단계에 맞춰 무거운 재질 기능을 켜고 끈다 (셰이더를 다시 컴파일한다).
+   *
+   *   2 = 전부 (표면 결 + 시언 + 클리어코트)
+   *   1 = 클리어코트만
+   *   0 = 전부 끔
+   *
+   * sheen 과 clearcoat 은 각각 BRDF 로브를 하나씩 더 쓴다. 환경맵까지 걸리면
+   * 픽셀당 큐브맵 샘플이 2~3배로 늘어나 내장 그래픽에서 바로 체감된다.
+   */
   function quality(level) {
     level = Math.max(0, Math.min(2, level));
     if (level === _level) return;
     _level = level;
     for (const e of _patched) _applyOne(e);
     for (const e of _sheened) {
-      const want = level >= 1 ? e.sheen : 0;
+      const want = level >= 2 ? e.sheen : 0;
       if (e.m.sheen !== want) { e.m.sheen = want; e.m.needsUpdate = true; }
+    }
+    for (const e of _coated) {
+      const want = level >= 1 ? e.coat : 0;
+      if (e.m.clearcoat !== want) { e.m.clearcoat = want; e.m.needsUpdate = true; }
     }
   }
 
-  /** sheen 을 쓰는 머티리얼을 품질 조절 대상으로 등록 */
+  /** sheen / clearcoat 을 쓰는 머티리얼을 품질 조절 대상으로 등록 */
   function register(m) {
-    if (m && m.sheen > 0) _sheened.push({ m: m, sheen: m.sheen });
+    if (!m) return m;
+    if (m.sheen > 0) _sheened.push({ m: m, sheen: m.sheen });
+    if (m.clearcoat > 0) _coated.push({ m: m, coat: m.clearcoat });
     return m;
   }
 

@@ -168,6 +168,18 @@
         });
         world.start();
         this.renderer.setQualityMode(cfg.quality || 'auto');
+        // 자동 강등이 일어나면 알려준다. 사용자가 '왜 갑자기 흐릿해졌지' 하지 않도록,
+        // 그리고 렉을 제보할 때 어느 단계까지 내려갔는지 알 수 있도록.
+        const QN = ['낮음', '보통', '높음', '최고'];
+        this.renderer.onQualityChange = (q) => {
+          if (this.renderer.qualityMode !== 'auto') return;
+          if (this._lastQ === undefined) { this._lastQ = q; return; }
+          const down = q < this._lastQ;
+          this._lastQ = q;
+          if (!down) return;
+          this.hud.showToast('성능 확보를 위해 그래픽 품질을 [' + QN[q] + '] 으로 낮췄습니다 (F3 진단)',
+                             '#ffd166');
+        };
         // 하드웨어 가속이 꺼져 있으면 알려주고 즉시 품질을 낮춘다
         const g = this.renderer.gpuInfo();
         if (g.software) {

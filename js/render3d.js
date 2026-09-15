@@ -264,9 +264,12 @@
       this._itemTpl = {};
       this._composerOn = true;
       // 적응형 품질: 프레임레이트가 낮으면 블룸/그림자/해상도를 단계적으로 낮춘다
-      // 소프트웨어 렌더링(하드웨어 가속 꺼짐)은 gpuInfo() 로 판별해 setTrack 에서
-      // 즉시 최저로 내린다. 그 전까지는 최고로 시작해 빠른 기기에서 손해보지 않는다.
-      this.quality = 3;
+      // 어떤 기기인지 모르는 상태에서 최고 품질로 시작하면 첫 몇 초가 반드시
+      // 버벅인다. 중간에서 시작해 프레임이 남으면 올라간다 (_adapt).
+      // 소프트웨어 렌더링은 gpuInfo() 로 판별해 main.js 에서 즉시 0 으로 내린다.
+      this.quality = 2;
+      this._envOn = true;          // 환경맵은 품질 2 이상에서만 (setQuality 가 갱신)
+      this.onQualityChange = null;  // 자동 강등을 사용자에게 알리기 위한 콜백
       this.qualityMode = 'auto';        // 'auto' | 0~3 고정
       this._baseDpr = Math.min(2, window.devicePixelRatio || 1);
       this._perf = { acc: 0, frames: 0, good: 0, fps: 0, ms: 0 };
@@ -318,7 +321,17 @@
       if (q === this.quality) return;
       this.quality = q;
       const dprScale = [0.7, 1, 1, this._baseDpr][q];
-      this.gl.setPixelRatio(q === 3 ? this._baseDpr : Math.min(this._baseDpr, dprScale));
+      let dpr = q === 3 ? this._baseDpr : Math.min(this._baseDpr, dprScale);
+      // 실제 렌더 픽셀 수에 단계별 상한을 둔다.
+      // 레티나/4K 는 devicePixelRatio 가 2~3 이라 픽셀 비율만 믿으면 같은 화면을
+      // 4~9배 크기로 그리게 된다. 픽셀당 비용이 지배적이므로 가장 확실한 레버다.
+      //   q0 0.9M(=1280x720) / q1 1.44M / q2 2.3M(=2048x1152) / q3 4.0M(=2560x1560)
+      if (this.w && this.h) {
+        const budget = [900000, 1440000, 2300000, 4000000][q];
+        const px = this.w * this.h * dpr * dpr;
+        if (px > budget) dpr *= Math.sqrt(budget / px);
+      }
+      this.gl.setPixelRatio(dpr);
       if (this.w) this.resize(this.w, this.h);
       this._composerOn = q >= 3;
       const shadows = q >= 1;
@@ -332,9 +345,13 @@
         }
       }
       // 표면 디테일 셰이더 / 시언은 픽셀당 비용이 커서 저사양에서는 내려야 한다
-      if (global.Surface) global.Surface.quality(q >= 3 ? 2 : (q >= 2 ? 1 : 0));
+      if (global.Surface) global.Surface.quality(q >= 3 ? 2 : (q >= 2 ? 1 : 0));   // 2=전부 1=코트만 0=끔
+      // 환경맵 샘플링도 저사양에서는 완전히 뺀다 (카트에만 걸려 있어도 비싸다)
+      const envOn = q >= 2;
+      if (envOn !== this._envOn) { this._envOn = envOn; this._refreshEnv(); }
       this.scene.traverse(o => { if (o.isMesh) o.material.needsUpdate = true; });
       if (window.console) console.info('[render] quality level ->', q);
+      if (this.onQualityChange) this.onQualityChange(q);
     }
 
     /**
@@ -699,6 +716,13 @@
 
       this._setupComposer(theme);
       this.theme = theme;
+
+      // 현재 품질 단계를 실제로 적용한다. setQuality 는 값이 같으면 조기 반환하므로
+      // 생성자에서 정한 시작 단계가 반영되지 않은 채로 남는다 (해상도·그림자·
+      // 환경맵·시언이 전부 최고 설정으로 켜져 있게 된다).
+      const q0 = this.quality;
+      this.quality = -1;
+      this.setQuality(q0);
     }
 
     /**
@@ -775,6 +799,7 @@
       );
       blob.rotation.x = -Math.PI / 2;
       this.scene.add(blob);
+      this._applyEnv(model);
       const node = { group: grp, model, lod: null, lodOn: false, blob, kart, aura: null };
       this.kartNodes.set(kart, node);
       kart.model3d = node;
@@ -790,11 +815,14 @@
        * 근경 카트는 44 드로우콜 / 21,500 삼각형이다. 화면에서 몇 픽셀인
        * 원경 카트까지 그렇게 그릴 이유가 없다. 히스테리시스를 둬서
        * 경계에서 깜빡이지 않게 한다. */
-      const wantLod = this.quality < 3
+      // 저사양에서는 내 카트만 고품질로 두고 나머지는 거리와 무관하게 LOD 로 간다.
+      // 플레이어가 실제로 들여다보는 건 자기 카트뿐이다.
+      const wantLod = (this.quality <= 1 && !k.isPlayer) || (this.quality < 3
         ? camD > (node.lodOn ? 300 : 340)
-        : camD > (node.lodOn ? 480 : 540);
+        : camD > (node.lodOn ? 480 : 540));
       if (wantLod && !node.lod) {
-        try { node.lod = global.Models.buildKartLOD(k.combo); g.add(node.lod); node.lod.visible = false; }
+        try { node.lod = global.Models.buildKartLOD(k.combo); this._applyEnv(node.lod);
+              g.add(node.lod); node.lod.visible = false; }
         catch (e) { node.lod = null; }
       }
       if (node.lod && wantLod !== node.lodOn) {
@@ -877,10 +905,42 @@
     }
 
     /* ============ 환경맵 (IBL) ============ */
+    /**
+     * 환경맵을 '반사가 의미 있는 오브젝트에만' 건다.
+     *
+     * scene.environment 는 씬의 모든 MeshStandardMaterial 에 걸린다. 그러면
+     * 화면 대부분을 덮는 16000 짜리 지형 평면까지 픽셀마다 큐브맵을 샘플링한다.
+     * 측정해보니 이것 하나가 프레임 시간의 82% 였다 (768ms -> 141ms).
+     * 반사가 실제로 보이는 건 카트 도색·크롬·눈동자뿐이므로, scene.environment
+     * 대신 해당 머티리얼에만 envMap 을 직접 꽂는다.
+     */
+    _applyEnv(root) {
+      const tex = this._envOn && this._envRT ? this._envRT.texture : null;
+      root.traverse(o => {
+        if (!o.isMesh || !o.material) return;
+        const list = Array.isArray(o.material) ? o.material : [o.material];
+        for (const m of list) {
+          if (m.envMap === tex) continue;
+          m.envMap = tex;
+          m.needsUpdate = true;                 // envMap 유무는 셰이더가 바뀐다
+        }
+      });
+    }
+
+    /** 품질 단계가 바뀌면 이미 만들어진 카트들에 다시 적용한다 */
+    _refreshEnv() {
+      this.kartNodes.forEach(n => {
+        this._applyEnv(n.model);
+        if (n.lod) this._applyEnv(n.lod);
+      });
+    }
+
     _buildEnv(theme, skyTex) {
       if (this._envRT) { this._envRT.dispose(); this._envRT = null; }
       this._envRT = global.Surface ? global.Surface.envMap(this.gl, theme, skyTex) : null;
-      this.scene.environment = this._envRT ? this._envRT.texture : null;
+      // 씬 전체에는 걸지 않는다. addKart 에서 카트에만 꽂는다.
+      this.scene.environment = null;
+      this._envOn = this.quality >= 2;
 
       // 실제 HDRI 가 있으면 그쪽을 우선한다 (비동기, 실패해도 무시).
       // manifest 에 지정이 없으면 관례 경로 assets/env/env.hdr 을 한 번 찔러본다.
@@ -893,7 +953,10 @@
       const url = file ? base + file : base + 'env/env.hdr';
       const want = theme;
       global.Surface.hdriMap(this.gl, url).then(rt => {
-        if (rt && this.theme === want) this.scene.environment = rt.texture;
+        if (!rt || this.theme !== want) return;
+        if (this._envRT && this._envRT !== rt) this._envRT.dispose();
+        this._envRT = rt;
+        this._refreshEnv();
       });
     }
 

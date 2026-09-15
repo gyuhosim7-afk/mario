@@ -55,7 +55,9 @@
     if (o.coat) {
       p.clearcoat = o.coat;
       p.clearcoatRoughness = o.coatRough === undefined ? 0.12 : o.coatRough;
-      return new T.MeshPhysicalMaterial(p);
+      const cm = new T.MeshPhysicalMaterial(p);
+      if (global.Surface) global.Surface.register(cm);
+      return cm;
     }
     return new T.MeshStandardMaterial(p);
   }
@@ -665,6 +667,7 @@
       color: new T.Color(ch.colors.trim || '#f4d03f'), roughness: 0.3, metalness: 0.25,
       clearcoat: 0.85, clearcoatRoughness: 0.1, envMapIntensity: 1.25
     });
+    if (global.Surface) { global.Surface.register(bodyMat); global.Surface.register(accentMat); }
     const darkMat = mat('#25252c', { rough: 0.38, metal: 0.35, envI: 1.1 });
     const chromeMat = mat('#dfe4ec', { rough: 0.1, metal: 1, envI: 1.5 });
     // 타이어: 완전 무광이면 검은 점토가 된다. 고무는 옆면에 은은한 광이 돈다
