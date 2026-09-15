@@ -76,7 +76,92 @@
       this.miniTrack = track.id;
     }
 
+    /**
+     * 2인 분할 화면 HUD.
+     *
+     * 전체 레이아웃을 반쪽에 그대로 넣으면 글자가 서로 겹치고 미니맵이 화면
+     * 밖으로 나간다. 그래서 각자에게 꼭 필요한 것(랩 · 순위 · 속도 · 아이템)만
+     * 압축해서 자기 반쪽 안에 그린다. 가운데 배너·토스트는 한 번만 그린다.
+     */
+    drawSplit(world, dt) {
+      const ctx = this.ctx, dpr = this.dpr || 1;
+      const W = this.w || this.canvas.width, H = this.h || this.canvas.height;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, W, H);
+      const half = H / 2;
+      const u = Math.max(0.5, Math.min(1.0, Math.min(W / 1280, half / 420)));
+      const ps = world.players || [world.player];
+      for (let i = 0; i < 2; i++) {
+        const me = ps[i];
+        if (!me) continue;
+        ctx.save();
+        ctx.translate(0, i * half);
+        // 위/아래 뷰 경계선
+        if (i === 1) {
+          ctx.fillStyle = 'rgba(8,10,18,0.9)';
+          ctx.fillRect(0, -2 * u, W, 4 * u);
+        }
+        const rank = world.standings.indexOf(me) + 1;
+        panel(ctx, 14 * u, 12 * u, 250 * u, 62 * u, 'rgba(10,12,22,0.55)');
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = i === 0 ? '#ffd54a' : '#7ee0ff';
+        ctx.font = '900 ' + (19 * u) + 'px system-ui, sans-serif';
+        ctx.fillText(i === 0 ? '1P' : '2P', 26 * u, 37 * u);
+        ctx.fillStyle = '#fff';
+        ctx.font = '800 ' + (17 * u) + 'px system-ui, sans-serif';
+        ctx.fillText('LAP ' + Math.max(1, Math.min(me.lap, world.track.laps)) +
+                     '/' + world.track.laps, 66 * u, 37 * u);
+        ctx.font = '600 ' + (13 * u) + 'px ui-monospace, monospace';
+        ctx.fillStyle = 'rgba(200,214,235,0.92)';
+        ctx.fillText(fmtTime(world.raceTime), 26 * u, 60 * u);
+        ctx.fillStyle = rank === 1 ? '#ffd54a' : '#fff';
+        ctx.font = '900 ' + (26 * u) + 'px system-ui, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText(rank + '위', 240 * u, 55 * u);
+        // 속도계 (오른쪽 아래, 숫자만)
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#fff';
+        ctx.font = '900 ' + (30 * u) + 'px ui-monospace, monospace';
+        ctx.fillText(String(Math.round(Math.abs(me.speed) * 1.05)), W - 24 * u, half - 26 * u);
+        ctx.font = '700 ' + (12 * u) + 'px system-ui, sans-serif';
+        ctx.fillStyle = 'rgba(200,214,235,0.8)';
+        ctx.fillText('km/h', W - 24 * u, half - 12 * u);
+        // 아이템 슬롯
+        panel(ctx, W - 96 * u, 12 * u, 76 * u, 60 * u, 'rgba(10,12,22,0.5)');
+        if (me.item) {
+          const ic = global.Icons && global.Icons.get(me.item.id);
+          if (ic) ctx.drawImage(ic, W - 90 * u, 16 * u, 64 * u, 52 * u);
+        }
+        // 드리프트 차징 게이지
+        if (me.driftStage >= 0) {
+          const c = ['#4fc3ff', '#ff9c2a', '#c264ff'][me.driftStage];
+          ctx.fillStyle = c;
+          ctx.fillRect(14 * u, 80 * u, (60 + me.driftStage * 60) * u, 6 * u);
+        }
+        // 미니맵: 작지만 있어야 한다. 레이싱에서 다음 코너를 모르면 못 달린다.
+        if (!this.mini || this.miniTrack !== world.track.id) this._buildMini(world.track);
+        const ms = 104 * u;
+        ctx.save();
+        ctx.translate(W - ms - 16 * u, 82 * u);
+        panel(ctx, -5 * u, -5 * u, ms + 10 * u, ms + 10 * u, 'rgba(10,12,22,0.45)');
+        ctx.globalAlpha = 0.75; ctx.drawImage(this.mini, 0, 0, ms, ms); ctx.globalAlpha = 1;
+        const mk = ms / world.track.world;
+        for (const k of world.karts) {
+          const mine = k === me;
+          ctx.fillStyle = mine ? '#fff' : k.color;
+          ctx.beginPath(); ctx.arc(k.x * mk, k.y * mk, (mine ? 4.2 : 2.8) * u, 0, 6.28); ctx.fill();
+          if (mine) { ctx.strokeStyle = i === 0 ? '#ffd54a' : '#7ee0ff'; ctx.lineWidth = 1.8 * u; ctx.stroke(); }
+        }
+        ctx.restore();
+        ctx.restore();
+      }
+      // 분할 화면에서는 배너를 경계선 위에 올린다. 위쪽 절반에 띄우면
+      // 1P 시야만 가리고 2P 는 카운트다운도 못 본다.
+      this._overlay(ctx, W, H, dt, Math.max(0.6, Math.min(1.3, W / 1280)), true);
+    }
+
     draw(world, dt) {
+      if (world && world.splitHud) return this.drawSplit(world, dt);
       const ctx = this.ctx;
       const dpr = this.dpr || 1;
       const W = this.w || this.canvas.width, H = this.h || this.canvas.height;
@@ -347,7 +432,15 @@
         ctx.restore();
       }
 
-      /* ---------- 토스트 / 대형 문구 ---------- */
+      this._overlay(ctx, W, H, dt, u);
+    }
+
+    /* ---------- 토스트 / 대형 문구 (1인·분할 공용) ---------- */
+    _overlay(ctx, W, H, dt, u, split) {
+      // 분할 화면의 토스트는 맨 위로 뺀다. 경계선 근처에 두면 한가운데
+      // 올라오는 카운트다운 숫자와 겹친다.
+      const toastY = split ? H * 0.035 : H * 0.2;
+      const bigY = split ? H * 0.5 : H * 0.42;
       if (this.toastT > 0) {
         this.toastT -= dt;
         ctx.save();
@@ -356,11 +449,11 @@
         ctx.font = '900 ' + (26 * u) + 'px system-ui, sans-serif';
         ctx.fillStyle = 'rgba(0,0,0,0.6)';
         const tw = ctx.measureText(this.toast).width;
-        roundRect(ctx, W / 2 - tw / 2 - 16 * u, H * 0.2, tw + 32 * u, 42 * u, 10 * u); ctx.fill();
+        roundRect(ctx, W / 2 - tw / 2 - 16 * u, toastY, tw + 32 * u, 42 * u, 10 * u); ctx.fill();
         ctx.fillStyle = this.toastColor;
         ctx.textBaseline = 'middle';
-        ctx.fillText(this.toast, W / 2 + (this.toastIcon ? 16 * u : 0), H * 0.2 + 22 * u);
-        if (this.toastIcon) ctx.drawImage(this.toastIcon, W / 2 - tw / 2 - 14 * u, H * 0.2 + 5 * u, 32 * u, 32 * u);
+        ctx.fillText(this.toast, W / 2 + (this.toastIcon ? 16 * u : 0), toastY + 22 * u);
+        if (this.toastIcon) ctx.drawImage(this.toastIcon, W / 2 - tw / 2 - 14 * u, toastY + 5 * u, 32 * u, 32 * u);
         ctx.restore();
       }
       if (this.bigT > 0) {
@@ -370,7 +463,7 @@
         ctx.globalAlpha = p;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         const sc = 1 + (1 - p) * 0.5;
-        ctx.translate(W / 2, H * 0.42); ctx.scale(sc, sc);
+        ctx.translate(W / 2, bigY); ctx.scale(sc, sc);
         ctx.font = '900 ' + (92 * u) + 'px system-ui, sans-serif';
         ctx.lineWidth = 10 * u; ctx.strokeStyle = 'rgba(0,0,0,0.7)';
         ctx.strokeText(this.bigText, 0, 0);

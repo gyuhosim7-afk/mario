@@ -32,6 +32,7 @@
       this.renderer = opts.renderer;
       this.hud = opts.hud;
       this.karts = [];
+      this.players = [];
       this.hazards = [];
       this.standings = [];
       this.time = 0;
@@ -44,6 +45,7 @@
       this.rocketWindow = false;
       /* ---- 타임어택 / 고스트 ---- */
       this.timeAttack = !!opts.timeAttack;
+      this.splitHud = !!opts.splitHud;        // HUD 를 위아래로 나눠 그린다
       this.rec = null;          // 이번 주행 기록기 (완주하면 최고 기록과 비교)
       this.ghost = null;        // 재생 중인 과거 기록 (Ghost.Playback)
       this.ghostBest = opts.ghostBest || null;   // 그 기록의 완주 시간
@@ -53,7 +55,12 @@
     addKart(k, isPlayer) {
       k.isPlayer = !!isPlayer;
       this.karts.push(k);
-      if (isPlayer) this.player = k;
+      if (isPlayer) {
+        // players 는 사람이 조종하는 카트 전부. player 는 1P (기존 코드 호환).
+        this.players.push(k);
+        k.playerIndex = this.players.length - 1;
+        if (!this.player) this.player = k;
+      }
       return k;
     }
 
@@ -183,6 +190,7 @@
 
       R.updateParticles(dt);
       if (this.player) R.camera.follow(this.player, dt, {});
+      if (R.split && R.camera2 && this.players[1]) R.camera2.follow(this.players[1], dt, {});
 
       // 엔진음 + 드리프트 타이어 마찰음
       if (this.player) {
@@ -202,12 +210,21 @@
       k.finishTime = this.raceTime;
       this.results.push(k);
       if (k.isPlayer) {
-        this.state = 'FINISHED';
-        if (this.rec) this._saveGhost(k.finishTime);
-        this.hud.showBig(this.ghostSaved ? '신기록!' : 'FINISH!',
-                         this.ghostSaved ? '#7dff9a' : '#ffd54a', 1.8);
+        if (this.rec && k === this.player) this._saveGhost(k.finishTime);
         global.SFX.sfx('finish');
-        setTimeout(() => this.onFinish(this._resultTable()), 2600);
+        // 분할 화면은 두 명이 다 들어와야 끝난다. 한 명이 먼저 들어왔다고
+        // 화면을 덮어 버리면 남은 한 명은 결과창 뒤에서 달리게 된다.
+        const left = this.players.filter(p => !p.finished);
+        if (left.length) {
+          this.hud.showBig((k.playerIndex === 0 ? '1P' : '2P') + ' FINISH!', '#ffd54a', 1.4);
+          // 완주한 사람 카트는 AI 가 이어서 몬다 (코스 밖으로 나가지 않게)
+          if (!k.ai) k.ai = new global.AI.Driver(k, 0.8);
+        } else {
+          this.state = 'FINISHED';
+          this.hud.showBig(this.ghostSaved ? '신기록!' : 'FINISH!',
+                           this.ghostSaved ? '#7dff9a' : '#ffd54a', 1.8);
+          setTimeout(() => this.onFinish(this._resultTable()), 2600);
+        }
       }
     }
     /** 이번 주행이 더 빠르면 고스트를 덮어쓴다 */
@@ -632,31 +649,49 @@
   /* =============================================================
    * 입력
    * ============================================================= */
+  /**
+   * 키 입력.
+   *
+   * scheme 으로 한 키보드를 둘로 나눈다.
+   *   'both'   1인 플레이 - 방향키와 WASD 를 둘 다 받는다 (기존 동작)
+   *   'wasd'   분할 화면 1P - W A S D · 왼쪽 Shift · Space
+   *   'arrows' 분할 화면 2P - 방향키 · 오른쪽 Shift · Enter
+   */
   class Input {
-    constructor() {
+    constructor(scheme) {
+      this.scheme = scheme || 'both';
       this.keys = {};
       this.touch = { throttle: 0, steer: 0, drift: false, item: false };
       window.addEventListener('keydown', e => {
         this.keys[e.code] = true;
-        if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
+        if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'Enter'].includes(e.code)) e.preventDefault();
       });
       window.addEventListener('keyup', e => { this.keys[e.code] = false; });
       window.addEventListener('blur', () => { this.keys = {}; });
     }
     apply(k) {
       const K1 = this.keys, t = this.touch;
-      const up = K1['ArrowUp'] || K1['KeyW'] || t.throttle > 0;
-      const down = K1['ArrowDown'] || K1['KeyS'];
-      const left = K1['ArrowLeft'] || K1['KeyA'];
-      const right = K1['ArrowRight'] || K1['KeyD'];
+      const s = this.scheme;
+      const wasd = s !== 'arrows', arr = s !== 'wasd';
+      const up = (arr && K1['ArrowUp']) || (wasd && K1['KeyW']) || t.throttle > 0;
+      const down = (arr && K1['ArrowDown']) || (wasd && K1['KeyS']);
+      const left = (arr && K1['ArrowLeft']) || (wasd && K1['KeyA']);
+      const right = (arr && K1['ArrowRight']) || (wasd && K1['KeyD']);
       k.input.throttle = up ? 1 : (down ? -1 : 0);
       k.input.brake = !!down && k.speed > 0;
-      k.input.steer = (left ? -1 : 0) + (right ? 1 : 0) + t.steer;
+      k.input.steer = (left ? -1 : 0) + (right ? 1 : 0) + (s === 'arrows' ? 0 : t.steer);
       k.input.steer = Math.max(-1, Math.min(1, k.input.steer));
-      k.input.drift = !!(K1['ShiftLeft'] || K1['ShiftRight'] || K1['KeyZ'] || t.drift);
+      // 분할 화면에서는 드리프트 키를 좌우 Shift 로 나눈다. 같은 키를 공유하면
+      // 한 명이 드리프트할 때 다른 한 명도 같이 걸린다.
+      k.input.drift = !!(s === 'wasd' ? K1['ShiftLeft']
+                       : s === 'arrows' ? (K1['ShiftRight'] || K1['Slash'])
+                       : (K1['ShiftLeft'] || K1['ShiftRight'] || K1['KeyZ'] || t.drift));
     }
     itemPressed() {
-      const p = this.keys['Space'] || this.keys['KeyX'] || this.touch.item;
+      const K1 = this.keys, s = this.scheme;
+      const p = s === 'wasd' ? K1['Space']
+              : s === 'arrows' ? (K1['Enter'] || K1['NumpadEnter'])
+              : (K1['Space'] || K1['KeyX'] || this.touch.item);
       const fire = p && !this._prev;
       this._prev = p;
       return fire;

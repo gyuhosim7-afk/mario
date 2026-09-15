@@ -61,7 +61,7 @@
 
       // 모드 전환: 타임어택이면 CPU 난이도가 의미 없고 고스트 선택이 의미 있다
       const syncMode = () => {
-        const ta = this.$.mode.value === 'ta';
+        const m = this.$.mode.value, ta = m === 'ta';
         this.$.ghostRow.style.display = ta ? '' : 'none';
         this.$.cpuDiff.parentElement.style.display = ta ? 'none' : '';
         // init 중에는 아직 트랙 카드도 파티 룸도 만들어지지 않았다.
@@ -406,8 +406,9 @@
     renderRoom() {
       const el = this.$.slots;
       // 타임어택은 혼자 달린다. CPU 슬롯을 보여줄 이유가 없다.
-      const ta = this.$.mode && this.$.mode.value === 'ta';
-      const shown = ta ? this.slots.slice(0, 1) : this.slots;
+      const m = this.$.mode ? this.$.mode.value : 'gp';
+      const ta = m === 'ta';
+      const shown = ta ? this.slots.slice(0, 1) : (m === '2p' ? this.slots.slice(0, 7) : this.slots);
       el.innerHTML = shown.map(s => {
         const c = s.combo;
         const st = c.stats;
@@ -428,6 +429,9 @@
         const b = global.Ghost && global.Ghost.bestTime(this.sel.track, +this.$.lapCount.value);
         this.$.roomStatus.textContent = '타임어택 · ' +
           (b ? '내 기록 ' + fmtTime(b) : '기록 없음 — 이번 주행이 첫 고스트가 됩니다');
+      } else if (m === '2p') {
+        this.$.roomStatus.textContent =
+          '2인 분할 · 1P: W A S D / 왼쪽 Shift / Space  ·  2P: 방향키 / 오른쪽 Shift / Enter';
       } else {
         this.$.roomStatus.textContent = readyCount + '/' + shown.length + ' READY' + (all ? ' — 방장 시작 가능' : '');
       }
@@ -453,9 +457,11 @@
         quality: this.$.gfx.value === 'auto' ? 'auto' : +this.$.gfx.value,
         mode: this.$.mode.value,
         ghost: this.$.ghostUse.value === '1',
-        // 타임어택은 혼자 달린다. CPU 를 아예 만들지 않는다.
-        opponents: this.$.mode.value === 'ta'
-          ? [] : this.slots.slice(1).map(s => ({ name: s.name, combo: s.combo }))
+        // 타임어택은 혼자 달린다. 2인 분할은 사람이 둘이므로 CPU 를 하나 줄여
+        // 전체 8대를 유지한다.
+        opponents: this.$.mode.value === 'ta' ? []
+          : this.slots.slice(1, this.$.mode.value === '2p' ? 7 : 8)
+              .map(s => ({ name: s.name, combo: s.combo }))
       });
     }
   };

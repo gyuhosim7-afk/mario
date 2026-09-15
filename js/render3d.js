@@ -291,6 +291,8 @@
 
       this.scene = new T.Scene();
       this.camera = new Camera3D(16 / 9);
+      this.camera2 = null;        // 2인 분할 화면의 아래쪽 뷰
+      this.split = false;
       this.particles = new Particles(this.scene);
       this.time = 0;
       this.flash = 0;
@@ -372,7 +374,7 @@
       }
       this.gl.setPixelRatio(dpr);
       if (this.w) this.resize(this.w, this.h);
-      this._composerOn = q >= 3;
+      this._composerOn = q >= 3 && !this.split;
       // 셰이더를 다시 컴파일해야 하는 설정이 실제로 바뀌었는지만 따진다.
       // 해상도만 달라졌는데 전체 머티리얼을 무효화하면 수백 개를 다시 컴파일하며
       // 화면이 통째로 멈춘다 (품질이 바뀔 때 멈춘다는 제보의 원인).
@@ -441,11 +443,21 @@
       }
     }
 
+    /** 2인 분할 화면 on/off. 켜면 위=1P, 아래=2P 로 두 번 그린다. */
+    setSplit(on) {
+      this.split = !!on;
+      if (on && !this.camera2) this.camera2 = new Camera3D(16 / 9);
+      if (this.w) this.resize(this.w, this.h);
+    }
+
     resize(w, h) {
       this.w = w; this.h = h;
       this.gl.setSize(w, h, false);
-      this.camera.cam.aspect = w / h;
+      // 분할 화면은 위아래로 나누므로 각 뷰의 종횡비가 두 배로 납작해진다
+      const a = this.split ? w / (h / 2) : w / h;
+      this.camera.cam.aspect = a;
       this.camera.cam.updateProjectionMatrix();
+      if (this.camera2) { this.camera2.cam.aspect = a; this.camera2.cam.updateProjectionMatrix(); }
       if (this.composer) this.composer.setSize(w, h);
     }
 
@@ -1225,8 +1237,23 @@
       // 렌더
       this.gl.info.autoReset = false;
       this.gl.info.reset();
-      if (this.composer && this._composerOn) this.composer.render();
-      else this.gl.render(this.scene, cam.cam);
+      if (this.split && this.camera2) {
+        // 분할 화면에서는 컴포저(블룸)를 쓰지 않는다. 컴포저는 화면 전체를
+        // 하나의 타깃으로 처리해서 뷰포트를 둘로 나눌 수 없고, 어차피 장면을
+        // 두 번 그리므로 비용도 두 배다.
+        const gl = this.gl, W = this.w, H = this.h, h2 = H / 2;
+        gl.setScissorTest(true);
+        gl.setViewport(0, h2, W, h2); gl.setScissor(0, h2, W, h2);   // 위 = 1P
+        gl.render(this.scene, cam.cam);
+        gl.setViewport(0, 0, W, h2); gl.setScissor(0, 0, W, h2);     // 아래 = 2P
+        gl.render(this.scene, this.camera2.cam);
+        gl.setScissorTest(false);
+        gl.setViewport(0, 0, W, H);
+      } else if (this.composer && this._composerOn) {
+        this.composer.render();
+      } else {
+        this.gl.render(this.scene, cam.cam);
+      }
       this._lastCalls = this.gl.info.render.calls;
       this._lastTris = this.gl.info.render.triangles;
     }

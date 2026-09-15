@@ -27,7 +27,8 @@
       this.renderer = new global.RenderSystem.Renderer(this.gameCanvas);
       this.hud = new global.HUDSystem.HUD(this.hudCanvas);
       this.hud.renderer = this.renderer;
-      this.input = new global.Game.Input();
+      this.input = new global.Game.Input();          // 1인용 (방향키 + WASD 둘 다)
+      this.input2 = null;                            // 분할 화면 2P 용
 
       global.Lobby.init(cfg => this.startRace(cfg));
 
@@ -135,7 +136,17 @@
         title.textContent = '카트 모델 조립 중…';
       });
 
-      const racers = [{ name: '나 (Player)', combo: cfg.combo, isPlayer: true }]
+      const split = cfg.mode === '2p';
+      // 2P 는 1P 와 다른 캐릭터를 자동으로 잡아준다 (화면에서 구분되어야 한다)
+      let combo2 = null;
+      if (split) {
+        const ids = global.GameData.CHARACTERS.map(c => c.id);
+        const mine = cfg.combo.character.id;
+        const other = ids[(ids.indexOf(mine) + 4) % ids.length];
+        combo2 = global.Stats.build(other, cfg.combo.frame.id, cfg.combo.wheel.id, cfg.combo.glider.id);
+      }
+      const racers = [{ name: '1P', combo: cfg.combo, isPlayer: true }]
+        .concat(split ? [{ name: '2P', combo: combo2, isPlayer: true }] : [])
         .concat(cfg.opponents.map(o => ({ name: o.name, combo: o.combo, isPlayer: false })));
 
       racers.forEach((r, i) => {
@@ -143,6 +154,7 @@
           const k = new global.KartSystem.Kart({
             id: i, name: r.name, combo: r.combo, isPlayer: r.isPlayer, track
           });
+          k.isHuman = r.isPlayer;
           this.renderer.addKart(k);
           karts.push(k);
           bar.style.width = (48 + (i + 1) / racers.length * 42) + '%';
@@ -153,15 +165,25 @@
         title.textContent = '그리드 정렬 중…';
         bar.style.width = '100%';
         const ta = cfg.mode === 'ta';
+        this.renderer.setSplit(split);
+        this._split = split;
+        this.input2 = split ? new global.Game.Input('arrows') : null;
+        this.input.scheme = split ? 'wasd' : 'both';
         const world = new global.Game.World({
           track, renderer: this.renderer, hud: this.hud,
-          timeAttack: ta,
+          timeAttack: ta, splitHud: split,
           onFinish: (res) => this.showResults(res)
         });
         // 스타팅 그리드: 무작위 배치
-        const order = karts.slice(1).sort(() => Math.random() - 0.5);
-        const grid = [karts[0]].concat(order).sort(() => Math.random() - 0.5);
-        grid.forEach(k => world.addKart(k, k.isPlayer));
+        const humans = karts.filter(k => k.isHuman);
+        const order = karts.filter(k => !k.isHuman).sort(() => Math.random() - 0.5);
+        const grid = humans.concat(order).sort(() => Math.random() - 0.5);
+        grid.forEach(k => world.addKart(k, k.isHuman));
+        // 그리드는 무작위로 섞이므로 players 순서도 뒤집힐 수 있다.
+        // 카트 id(= racers 순서)로 다시 세워야 1P 가 위 화면, 2P 가 아래 화면이 된다.
+        world.players.sort((a, b) => a.id - b.id);
+        world.players.forEach((pk, i) => { pk.playerIndex = i; });
+        world.player = world.players[0];
         world.karts.forEach(k => {
           if (!k.isPlayer) {
             const jitter = (Math.random() - 0.5) * 0.22;
@@ -218,6 +240,10 @@
         }
         this.renderer.particles.length = 0;
         this.renderer.camera.reset(world.player);
+        if (split && this.renderer.camera2 && world.players[1]) {
+          this.renderer.camera2.reset(world.players[1]);
+          this.hud.showToast('1P: W A S D · 왼쪽 Shift · Space   |   2P: 방향키 · 오른쪽 Shift · Enter', '#9fe8ff');
+        }
         this.world = world;
         this.paused = false;
         document.getElementById('pauseOverlay').classList.add('hidden');
@@ -285,9 +311,12 @@
       if (!w) return;
 
       if (!this.paused) {
-        if (w.player && !w.player.finished) {
-          this.input.apply(w.player);
-          if (this.input.itemPressed()) w.useItem(w.player);
+        const ins = this.input2 ? [this.input, this.input2] : [this.input];
+        for (let i = 0; i < ins.length; i++) {
+          const pk = w.players ? w.players[i] : (i === 0 ? w.player : null);
+          if (!pk || pk.finished) continue;
+          ins[i].apply(pk);
+          if (ins[i].itemPressed()) w.useItem(pk);
         }
         w.update(dt);
       }
