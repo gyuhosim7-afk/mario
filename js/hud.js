@@ -27,12 +27,27 @@
       this.mini = null;
     }
     resize(w, h) {
-      // 고해상도 화면에서 HUD 텍스트가 뭉개지지 않도록 DPR 배율로 렌더한다
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      // 고해상도 화면에서 HUD 텍스트가 뭉개지지 않도록 DPR 배율로 렌더한다.
+      //
+      // 다만 이 캔버스는 매 프레임 전체가 지워지고 다시 그려진다. 4K 에서
+      // devicePixelRatio 2 를 그대로 쓰면 프레임마다 830만 픽셀을 CPU 로
+      // 칠하게 되고, WebGL 과 별개로 메인 스레드를 잡아먹는다.
+      // 텍스트가 선명할 정도만 남기고 총 픽셀 수에 상한을 둔다 (250만 = 약 1440p).
+      let dpr = Math.min(2, window.devicePixelRatio || 1);
+      const px = w * h * dpr * dpr;
+      const budget = this.pixelBudget || 2500000;
+      if (px > budget) dpr = Math.max(1, dpr * Math.sqrt(budget / px));
       this.dpr = dpr;
       this.w = w; this.h = h;
       this.canvas.width = Math.round(w * dpr);
       this.canvas.height = Math.round(h * dpr);
+    }
+
+    /** 렌더러 품질 단계에 맞춰 HUD 해상도 예산도 같이 내린다 */
+    setPixelBudget(px) {
+      if (this.pixelBudget === px) return;
+      this.pixelBudget = px;
+      if (this.w) this.resize(this.w, this.h);
     }
 
     showToast(text, color, itemId) {

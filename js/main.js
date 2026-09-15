@@ -180,6 +180,14 @@
           this.hud.showToast('성능 확보를 위해 그래픽 품질을 [' + QN[q] + '] 으로 낮췄습니다 (F3 진단)',
                              '#ffd166');
         };
+        // HUD 는 매 프레임 CPU 로 전체를 다시 칠한다. 품질 단계와 같이 해상도를 내린다.
+        const hudBudget = (q) => [1100000, 1600000, 2500000, 2500000][q];
+        this.hud.setPixelBudget(hudBudget(this.renderer.quality));
+        const prevCb = this.renderer.onQualityChange;
+        this.renderer.onQualityChange = (q) => {
+          this.hud.setPixelBudget(hudBudget(q));
+          if (prevCb) prevCb(q);
+        };
         // 하드웨어 가속이 꺼져 있으면 알려주고 즉시 품질을 낮춘다
         const g = this.renderer.gpuInfo();
         if (g.software) {
