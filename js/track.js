@@ -212,6 +212,41 @@
         }
         this.boxSpots.push(best);
       }
+      // 점프대: 직선 구간에 배치하되 부스터 발판·아이템 박스와 겹치지 않게
+      const rampN = this.def.rampCount === undefined ? 2 : this.def.rampCount;
+      this.ramps = [];
+      const nearAny = (arr, i, frac) => arr.some(b => {
+        const d = Math.abs(i - b); return Math.min(d, N - d) < N * frac;
+      });
+      for (let r = 0; r < rampN; r++) {
+        const base = Math.round(((r + 0.28) / rampN) * N);
+        // 1차는 부스터·박스·게이트를 넉넉히 피해서 찾고, 그래도 자리가 없으면
+        // 다른 점프대와만 겹치지 않게 완화해서 다시 찾는다. 한 번만 돌리면
+        // 트랙에 따라 점프대가 통째로 사라진다 (실제로 2개 중 1개만 나왔다).
+        let best = -1;
+        for (const pass of [0, 1]) {
+          let bs = Infinity;
+          const rng = Math.round(N * (pass ? 0.13 : 0.08));
+          const pad = pass ? 0.025 : 0.05;
+          for (let k = -rng; k <= rng; k++) {
+            const i = (base + k + N) % N;
+            if (nearAny(this.boostSpots, i, pad) || nearAny(this.boxSpots, i, pad)) continue;
+            if (nearAny(this.gantrySpots, i, pass ? 0.02 : 0.035)) continue;
+            if (this.ramps.some(rp => {
+              const d = Math.abs(i - rp.i); return Math.min(d, N - d) < N * (pass ? 0.09 : 0.14);
+            })) continue;
+            if (score[i] < bs) { bs = score[i]; best = i; }
+          }
+          if (best >= 0) break;
+        }
+        if (best < 0) continue;
+        const nd = this.nodes[best];
+        this.ramps.push({
+          i: best, x: nd.x, y: nd.y,
+          angle: Math.atan2(nd.dy, nd.dx),
+          len: 108, half: 54          // 진행 방향 길이 (물리 판정과 메시가 공유)
+        });
+      }
       this._straightScore = score;
     }
 

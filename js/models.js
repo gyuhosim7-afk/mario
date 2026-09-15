@@ -1395,6 +1395,69 @@
   /* ---------------- 트랙 위 게이트 / 배경 세트 ---------------- */
 
   /** 도로를 가로지르는 게이트(갠트리). 코스가 '설계된' 느낌을 준다 */
+  /**
+   * 점프대 - 진행 방향으로 솟는 쐐기.
+   *
+   * +x 가 진행 방향이다. 앞쪽 끝이 가장 높고 뒤쪽은 노면과 맞닿아 있어야
+   * 카트가 턱에 걸리지 않고 자연스럽게 타고 올라가는 것처럼 보인다.
+   */
+  function buildRamp(theme, roadW) {
+    const g = new T.Group();
+    const L = 108, W = Math.min(roadW * 0.56, 96), H = 26;
+    const slope = Math.atan2(H, L);
+    const deck = theme === 'rainbow' ? '#2a2350' : (theme === 'bowser' ? '#2e1610' : '#38383f');
+    const edge = theme === 'rainbow' ? '#ff54c8' : (theme === 'bowser' ? '#ff7a1e' : '#f5a623');
+    const deckMat = mat(deck, { rough: 0.55, metal: 0.25, envI: 0.9, flat: true });
+    const edgeMat = emissiveMat(edge, edge, 1.6);
+
+    // 삼각 프리즘. 감는 방향(winding)을 틀리면 면이 컬링돼서 레일만 공중에
+    // 떠 있는 것처럼 보인다 - 실제로 한 번 그렇게 나왔다. 바깥쪽에서 봤을 때
+    // 반시계가 되도록 여섯 면을 전부 손으로 맞춘다.
+    const geom = geo('ramp' + Math.round(L) + '_' + Math.round(W) + '_' + H, () => {
+      const hw = W / 2, x0 = -L / 2, x1 = L / 2;
+      const B0 = [x0, 0, -hw], B1 = [x0, 0, hw];
+      const F0 = [x1, 0, -hw], F1 = [x1, 0, hw];
+      const T0 = [x1, H, -hw], T1 = [x1, H, hw];
+      const tris = [
+        B0, B1, T1,   B0, T1, T0,      // 윗면 (경사)
+        F0, T0, T1,   F0, T1, F1,      // 앞면 (수직 턱)
+        B0, T0, F0,                    // 왼쪽 옆면
+        B1, F1, T1,                    // 오른쪽 옆면
+        B0, F0, F1,   B0, F1, B1       // 바닥
+      ];
+      const pos = new Float32Array(tris.length * 3);
+      tris.forEach((v, i) => { pos[i * 3] = v[0]; pos[i * 3 + 1] = v[1]; pos[i * 3 + 2] = v[2]; });
+      const bg = new T.BufferGeometry();
+      bg.setAttribute('position', new T.BufferAttribute(pos, 3));
+      bg.computeVertexNormals();
+      return bg;
+    });
+    const wedge = mesh(geom, deckMat);
+    wedge.castShadow = true; wedge.receiveShadow = true;
+    g.add(wedge);
+
+    // 앞쪽 발광 립
+    const lip = box(3.4, 3.0, W, edgeMat, L / 2 - 1.7, H + 1.2, 0);
+    lip.castShadow = false; g.add(lip);
+
+    // 셰브론: 경사면 위에 눕혀 붙인다 (기울기만큼 돌려야 판이 뜨지 않는다)
+    for (let i = 0; i < 3; i++) {
+      const t = 0.26 + i * 0.24;
+      const ch = box(7, 1.4, W * 0.6, edgeMat, -L / 2 + L * t, H * t + 1.3, 0);
+      ch.rotation.z = slope;
+      ch.castShadow = false; g.add(ch);
+    }
+
+    // 옆면 레일: 상자 중심을 경사 중앙에 두고 기울기만큼 돌리면 양 끝이
+    // 정확히 바닥(뒤)과 꼭대기(앞)에 맞는다
+    [-1, 1].forEach(sd => {
+      const rail = box(L / Math.cos(slope), 2.6, 2.6, edgeMat, 0, H / 2 + 1.3, sd * (W / 2 + 1.3));
+      rail.rotation.z = slope;
+      rail.castShadow = false; g.add(rail);
+    });
+    return g;
+  }
+
   function buildGantry(theme, roadW, kind) {
     const g = new T.Group();
     const span = roadW + 90;
@@ -1746,5 +1809,5 @@
     return g;
   }
 
-  global.Models = { buildKart, buildKartLOD, optimize, buildGantry, buildBackdrop, buildHorizon, lathe, taperBone, buildCharacter, buildItem, buildProp, buildLandmark, mat, mesh, sphere, box, cyl, cone, rounded, starShape, torus, geo };
+  global.Models = { buildKart, buildKartLOD, optimize, buildGantry, buildRamp, buildBackdrop, buildHorizon, lathe, taperBone, buildCharacter, buildItem, buildProp, buildLandmark, mat, mesh, sphere, box, cyl, cone, rounded, starShape, torus, geo };
 })(window);

@@ -98,7 +98,11 @@
       if (bodyNode) {
         if (landed) S.vh -= 52;                          // 착지 충격
         S.prevZ = k.z;
-        const tPitch = clamp(-S.acc * 0.00042, -0.10, 0.10) + (k.boostTimer > 0 ? -0.035 : 0);
+        // 공중에서는 가감속이 아니라 상하 속도가 자세를 정한다.
+        // 올라갈 때 앞이 들리고 내려올 때 앞이 숙어야 점프가 '날았다' 로 읽힌다.
+        const tPitch = k.airborne
+          ? clamp(-(k.vz || 0) / 900, -0.30, 0.26)
+          : clamp(-S.acc * 0.00042, -0.10, 0.10) + (k.boostTimer > 0 ? -0.035 : 0);
         const tRoll = clamp(-latF * 0.10, -0.14, 0.14) + (k.drifting ? k.driftDir * 0.09 : 0);
         spring(S, 'pitch', 'vp', hurt ? 0 : tPitch, 62, 10, dt);
         spring(S, 'roll', 'vr', hurt ? 0 : tRoll, 68, 10, dt);

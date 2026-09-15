@@ -670,6 +670,14 @@
         g.add(pad);
       }
 
+      /* --- 점프대 --- */
+      for (const rp of (track.ramps || [])) {
+        const rmp = global.Models.optimize(global.Models.buildRamp(theme, track.width));
+        rmp.position.set(rp.x, 0, rp.y);
+        rmp.rotation.y = -rp.angle;
+        g.add(rmp);
+      }
+
       /* --- 스타트 라인 --- */
       const sgTex = global.Tex.tex(global.Tex.startGrid(), 5, 1);
       const nd0 = nodes[0];
@@ -906,7 +914,7 @@
       m.position.y = hop;
       if (!m.userData.rig) {
         const lean = k.drifting ? k.driftDir * 0.16 : -(k.input.steer || 0) * 0.05;
-        m.rotation.x += ((k.airborne ? -0.2 : lean) - m.rotation.x) * Math.min(1, dt * 8);
+        m.rotation.x += ((k.airborne ? this._airPitch(k) : lean) - m.rotation.x) * Math.min(1, dt * 8);
       }
 
       // LOD 모델은 관절이 통째로 병합돼 있어 리그·바퀴를 돌려봐야 화면에
@@ -1042,6 +1050,14 @@
       this.hazardNodes.forEach((n, h) => {
         if (!seen.has(h)) { this.scene.remove(n); this.hazardNodes.delete(h); }
       });
+    }
+
+    /**
+     * 공중 자세: 올라갈 때 앞이 들리고 내려올 때 앞이 숙는다.
+     * 뜬 내내 같은 각도로 굳어 있으면 발사체처럼 보인다.
+     */
+    _airPitch(k) {
+      return Math.max(-0.34, Math.min(0.30, -(k.vz || 0) / 900));
     }
 
     /**

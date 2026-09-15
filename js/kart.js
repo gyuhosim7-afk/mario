@@ -59,6 +59,11 @@
       this.driftCharge = 0;
       this.driftStage = -1;
       this.hopT = 0;
+      this.airT = 0;             // 공중에 떠 있던 시간 (착지 부스터 세기)
+      this.trick = false;        // 공중에서 드리프트 키 = 트릭 (착지 부스터 증폭)
+      this.landJustNow = false;  // 착지 프레임 신호 (파티클·사운드용)
+      this.jumpJustNow = false;  // 이륙 프레임 신호
+      this._rampLatch = -1;      // 같은 점프대에서 연속 발사되지 않게
 
       this.boostTimer = 0;
       this.boostPower = 1;
@@ -296,6 +301,13 @@
       const inp = this.input;
       this._sampleSurface();
 
+      /* ---- 공중 (점프대) ----
+       * 떠 있는 동안에는 노면 판정을 통째로 건너뛴다. 공중인데 아래가 잔디라고
+       * 감속하거나, 아래가 허공이라고 리스폰시키면 점프대가 함정이 된다. */
+      if (this.airborne) { this._flight(dt); this._checkLap(); return; }
+      this._rampCheck();
+      if (this.airborne) { this._checkLap(); return; }
+
       // 노면 배율
       let surfMul = 1;
       if (this.surface === S.OFFROAD) surfMul = ph.offroadGrip;
@@ -412,6 +424,72 @@
       this.wheelSpin += this.speed * dt * 0.05;
       this._integrate(dt, world);
       this._checkLap();
+    }
+
+    /** 점프대를 밟았는지 (진행 방향 ±half, 노면 폭 안, 최소 속도 이상) */
+    _rampCheck() {
+      const ramps = this.track.ramps;
+      if (!ramps || !ramps.length) return;
+      for (let r = 0; r < ramps.length; r++) {
+        const rp = ramps[r];
+        if (this._rampLatch === r) continue;
+        const dx = this.x - rp.x, dy = this.y - rp.y;
+        const c = Math.cos(rp.angle), sn = Math.sin(rp.angle);
+        const along = dx * c + dy * sn;          // 진행 방향 거리
+        const side = -dx * sn + dy * c;          // 좌우 거리
+        if (Math.abs(along) > rp.half || Math.abs(side) > this.track.width * 0.3) continue;
+        // 뒤로 가거나 기어가는 중이면 뜨지 않는다
+        if (this.speed < this.phys.maxSpeed * 0.3) { this._rampLatch = r; return; }
+        this.airborne = true;
+        this.airT = 0;
+        this.trick = false;
+        // 빠를수록 멀리 난다. 다만 상한을 둬서 코스를 통째로 건너뛰지 못하게.
+        const sr = Math.min(1.25, this.speed / this.phys.maxSpeed);
+        this.vz = 250 + sr * 190;
+        this.z = Math.max(this.z, 6);
+        this._cancelDrift();
+        this.hopT = 0;
+        this.jumpJustNow = true;
+        this._rampLatch = r;
+        return;
+      }
+      // 점프대에서 충분히 멀어지면 다시 밟을 수 있게 래치를 푼다
+      if (this._rampLatch >= 0) {
+        const rp = ramps[this._rampLatch];
+        if (Math.hypot(this.x - rp.x, this.y - rp.y) > rp.half + 140) this._rampLatch = -1;
+      }
+    }
+
+    /**
+     * 공중 비행.
+     *
+     * 조향은 자세 제어 수준으로만 남긴다. 공중에서 평소처럼 돌아가면 점프대가
+     * 코너를 지름길로 잘라먹는 도구가 된다.
+     */
+    _flight(dt) {
+      this.airT += dt;
+      this.vz -= 900 * dt;
+      this.z += this.vz * dt;
+      this.angle += (this.input.steer || 0) * 1.05 * dt;
+      if (this.input.drift) this.trick = true;
+      this.speed -= this.speed * 0.05 * dt;            // 공기 저항
+      this.vlat *= (1 - dt * 1.2);
+      this._integrate(dt);
+      if (this.z > 0) return;
+
+      /* ---- 착지 ---- */
+      this.z = 0; this.vz = 0; this.airborne = false;
+      const air = this.airT;
+      this.airT = 0;
+      this.shake = Math.min(1, 0.22 + air * 0.55);
+      this.landJustNow = true;
+      this.landTrick = this.trick;
+      // 착지 부스터. 트릭(공중 드리프트)을 넣었으면 더 세게.
+      if (air > 0.22) {
+        if (this.trick) this.giveBoost(0.95, 1.38, 'trick');
+        else this.giveBoost(0.55, 1.18, 'land');
+      }
+      this.trick = false;
     }
 
     _integrate(dt) {

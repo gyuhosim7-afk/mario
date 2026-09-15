@@ -153,6 +153,7 @@
             }
           }
         }
+        this._jumpFeedback(k);
         this._emitParticles(k, dt);
       }
 
@@ -553,6 +554,38 @@
         if (k.invincible || k.finished) continue;
         const d = Math.hypot(k.x - h.x, k.y - h.y);
         if (d < 105) this.hitKart(k, 'knock', k.x - h.x, k.y - h.y, 1 - d / 220, h.owner);
+      }
+    }
+
+    /* ---- 점프대 이륙 / 착지 연출 ---- */
+    _jumpFeedback(k) {
+      const R = this.renderer;
+      if (k.jumpJustNow) {
+        k.jumpJustNow = false;
+        if (k.isPlayer) global.SFX.sfx('boost');
+        const c = Math.cos(k.angle), s = Math.sin(k.angle);
+        for (let i = 0; i < 10; i++) {
+          R.spawn(k.x - c * 20, k.y - s * 20, 10,
+            -c * 90 + (Math.random() - 0.5) * 120, -s * 90 + (Math.random() - 0.5) * 120,
+            40 + Math.random() * 90, 0.45, 0xbfe6ff, 5, 'smoke');
+        }
+      }
+      if (k.landJustNow) {
+        k.landJustNow = false;
+        const trick = k.landTrick;
+        if (k.isPlayer) {
+          global.SFX.sfx('thud');
+          if (trick) global.SFX.sfx('mt');
+          R.camera.shake = Math.max(R.camera.shake, trick ? 0.7 : 0.45);
+          if (trick) this.hud.showBig('TRICK!', '#7dff9a', 0.8);
+        }
+        // 착지 먼지: 바퀴 위치에서 바깥으로 퍼진다
+        const n = trick ? 22 : 14;
+        for (let i = 0; i < n; i++) {
+          const a = Math.random() * Math.PI * 2, sp = 90 + Math.random() * 150;
+          R.spawn(k.x, k.y, 5, Math.cos(a) * sp, Math.sin(a) * sp, 20 + Math.random() * 70,
+            0.55, trick ? 0xffd66b : 0xd8d8e0, trick ? 5 : 6, 'smoke');
+        }
       }
     }
 
