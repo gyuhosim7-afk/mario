@@ -96,12 +96,25 @@
     }
   }
 
+  /* 매 프레임 재사용하는 임시 객체. 프레임마다 new 하면 GC 스파이크가 된다. */
+  const _m4 = new T.Matrix4(), _m4b = new T.Matrix4();
+  const _q = new T.Quaternion(), _eul = new T.Euler();
+  const _v3a = new T.Vector3(), _v3b = new T.Vector3();
+
   /* ---------------- 파티클 (단일 Points) ---------------- */
   const MAX_P = 1400;
+  // 파티클은 객체 풀이다. 레인보우 트랙에서 카트 8대가 초당 400개 넘게 뿜는데
+  // 매번 {} 를 새로 만들면 그게 전부 쓰레기가 되고, 1~2초마다 GC 가 돌면서
+  // 프레임이 통째로 튄다. 풀에서 꺼내 쓰고 죽으면 자리만 맞바꾼다 (할당 0).
   class Particles {
     constructor(scene) {
       this.n = 0;
-      this.data = [];
+      this.pool = new Array(MAX_P);
+      for (let i = 0; i < MAX_P; i++) {
+        this.pool[i] = { x:0, y:0, z:0, vx:0, vy:0, vz:0, life:0, max:1,
+                         size:4, smoke:false, r:1, g:1, b:1 };
+      }
+      this.live = 0;                  // pool[0 .. live-1] 이 살아 있는 파티클
       const g = new T.BufferGeometry();
       this.pos = new Float32Array(MAX_P * 3);
       this.col = new Float32Array(MAX_P * 3);
@@ -135,41 +148,57 @@
       scene.add(this.points);
       this._c = new T.Color();
     }
+    /**
+     * color 는 0xrrggbb 정수를 권장한다. 문자열을 주면 three 가 매번 정규식으로
+     * 파싱하면서 문자열 쓰레기를 만든다 (특히 'hsl(...)' 을 매 프레임 조립할 때).
+     */
     spawn(x, y, z, vx, vy, vz, life, color, size, kind) {
-      if (this.data.length >= MAX_P) return;
+      if (this.live >= MAX_P) return;
       this._c.set(color);
-      this.data.push({
-        x, y, z, vx, vy, vz, life, max: life, size: size || 4, kind: kind || 'dot',
-        r: this._c.r, g: this._c.g, b: this._c.b
-      });
+      const q = this.pool[this.live++];
+      q.x = x; q.y = y; q.z = z;
+      q.vx = vx; q.vy = vy; q.vz = vz;
+      q.life = life; q.max = life;
+      q.size = size || 4;
+      q.smoke = kind === 'smoke';
+      q.r = this._c.r; q.g = this._c.g; q.b = this._c.b;
     }
-    clear() { this.data.length = 0; this.geo.setDrawRange(0, 0); }
+    clear() { this.live = 0; this.geo.setDrawRange(0, 0); }
     update(dt) {
-      const d = this.data;
-      for (let i = d.length - 1; i >= 0; i--) {
-        const q = d[i];
+      const pool = this.pool;
+      const p = this.pos, c = this.col, s = this.siz;
+      let n = this.live;
+      for (let i = n - 1; i >= 0; i--) {
+        const q = pool[i];
         q.life -= dt;
-        if (q.life <= 0) { d[i] = d[d.length - 1]; d.pop(); continue; }
+        if (q.life <= 0) {
+          // 죽은 자리와 마지막 자리를 '교환'한다. pop 하지 않으므로 객체는
+          // 풀에 그대로 남고, 다음 spawn 이 그 객체를 재사용한다.
+          n--;
+          pool[i] = pool[n]; pool[n] = q;
+          continue;
+        }
         q.x += q.vx * dt; q.y += q.vy * dt; q.z += q.vz * dt;
-        q.vz -= (q.kind === 'smoke' ? 18 : 240) * dt;
+        q.vz -= (q.smoke ? 18 : 240) * dt;
         if (q.z < 0) { q.z = 0; q.vz *= -0.26; q.vx *= 0.72; q.vy *= 0.72; }
-        const damp = 1 - dt * (q.kind === 'smoke' ? 0.8 : 1.5);
+        const damp = 1 - dt * (q.smoke ? 0.8 : 1.5);
         q.vx *= damp; q.vy *= damp;
       }
-      const p = this.pos, c = this.col, s = this.siz;
-      for (let i = 0; i < d.length; i++) {
-        const q = d[i], a = Math.max(0, q.life / q.max);
-        p[i * 3] = q.x; p[i * 3 + 1] = q.z; p[i * 3 + 2] = q.y;
-        const f = q.kind === 'smoke' ? a * 0.5 : a;
-        c[i * 3] = q.r * f; c[i * 3 + 1] = q.g * f; c[i * 3 + 2] = q.b * f;
-        s[i] = q.size * (q.kind === 'smoke' ? (2.2 - a) : (0.5 + a * 0.9));
+      this.live = n;
+      for (let i = 0; i < n; i++) {
+        const q = pool[i], a = q.life / q.max;
+        const o = i * 3;
+        p[o] = q.x; p[o + 1] = q.z; p[o + 2] = q.y;
+        const f = q.smoke ? a * 0.5 : a;
+        c[o] = q.r * f; c[o + 1] = q.g * f; c[o + 2] = q.b * f;
+        s[i] = q.size * (q.smoke ? (2.2 - a) : (0.5 + a * 0.9));
       }
-      this.geo.setDrawRange(0, d.length);
+      this.geo.setDrawRange(0, n);
       this.geo.attributes.position.needsUpdate = true;
       this.geo.attributes.color.needsUpdate = true;
       this.geo.attributes.size.needsUpdate = true;
     }
-    get length() { return this.data.length; }
+    get length() { return this.live; }
     set length(v) { if (v === 0) this.clear(); }
   }
 
@@ -215,9 +244,17 @@
     return g;
   }
 
-  /** 템플릿 그룹을 InstancedMesh 로 복제 (드로우콜 절감) */
+  /**
+   * 템플릿 그룹을 InstancedMesh 로 복제 (드로우콜 절감).
+   *
+   * 인스턴싱은 '같은 메시를 여러 번'을 1콜로 줄여 줄 뿐, 템플릿이 몇 개의
+   * 메시로 되어 있는지는 그대로 남는다. 나무 한 그루가 잎/줄기/그림자판
+   * 4개 메시면 인스턴스로 만들어도 콜이 4개다. 그래서 먼저 머티리얼 단위로
+   * 병합해서 잎 개수 자체를 줄인다.
+   */
   function instantiate(template, transforms, scene, castShadow) {
     const leaves = [];
+    if (global.Models && global.Models.optimize) global.Models.optimize(template);
     template.updateMatrixWorld(true);
     template.traverse(o => {
       if (o.isMesh) leaves.push({ geo: o.geometry, mat: o.material, m: o.matrixWorld.clone(), cast: o.castShadow });
@@ -678,8 +715,9 @@
       boxTpl.traverse(o => { if (o.isMesh) this._boxLeaves.push(o.matrixWorld.clone()); });
 
       /* --- 스톰퍼 --- */
+      // 스톰퍼는 통째로 움직이므로 내부 메시는 전부 병합해도 된다 (11 -> 2~3콜)
       this.thwompNodes = track.thwomps.map(t => {
-        const n = global.Models.buildProp('thwomp');
+        const n = global.Models.optimize(global.Models.buildProp('thwomp'));
         n.position.set(t.x, t.h + 40, t.y);
         g.add(n);
         return n;
@@ -695,7 +733,7 @@
       });
 
       /* --- 배경 랜드마크 --- */
-      const lm = global.Models.buildLandmark(theme);
+      const lm = global.Models.optimize(global.Models.buildLandmark(theme));
       if (theme === 'rainbow') lm.position.set(-2200, 1300, -1700);
       else if (theme === 'bowser') lm.position.set(2500, 30, -2700);
       else lm.position.set(2500, 0, -2600);
@@ -1025,18 +1063,19 @@
 
       // 아이템 박스 (리스폰 중이면 축소)
       if (this.boxMeshes) {
-        const tmp = new T.Matrix4(), q = new T.Quaternion(), sv = new T.Vector3(), pv = new T.Vector3();
-        this.track.itemBoxes.forEach((b, i) => {
-          const alive = b.respawn <= 0;
-          const s = alive ? 1 : Math.max(0.001, 1 - b.respawn / 6.5) * 0.25;
-          q.setFromEuler(new T.Euler(this.time * 0.6, this.time * 1.1 + i, 0));
-          pv.set(b.x, 26 + Math.sin(this.time * 2 + i) * 4, b.y);
-          sv.setScalar(s);
-          this.boxMeshes.forEach((im, li) => {
-            tmp.compose(pv, q, sv).multiply(this._boxLeaves[li]);
-            im.setMatrixAt(i, tmp);
-          });
-        });
+        const boxes = this.track.itemBoxes;
+        for (let i = 0; i < boxes.length; i++) {
+          const b = boxes[i];
+          const s = b.respawn <= 0 ? 1 : Math.max(0.001, 1 - b.respawn / 6.5) * 0.25;
+          _eul.set(this.time * 0.6, this.time * 1.1 + i, 0);
+          _q.setFromEuler(_eul);
+          _v3a.set(b.x, 26 + Math.sin(this.time * 2 + i) * 4, b.y);
+          _v3b.setScalar(s);
+          for (let li = 0; li < this.boxMeshes.length; li++) {
+            _m4.compose(_v3a, _q, _v3b).multiply(this._boxLeaves[li]);
+            this.boxMeshes[li].setMatrixAt(i, _m4);
+          }
+        }
         this.boxMeshes.forEach(im => { im.instanceMatrix.needsUpdate = true; });
       }
 
@@ -1068,15 +1107,17 @@
       }
       if (this.boostMat && this.boostMat.map) this.boostMat.map.offset.x = -this.time * 1.4;
       if (this.staroids) {
-        // 회전하는 별 소행성
-        const tmp = new T.Matrix4();
-        this.staroids.meshes.forEach(im => {
-          this.staroids.mats.forEach((base, i) => {
-            tmp.copy(base).multiply(new T.Matrix4().makeRotationY(this.time * 0.6 + i));
-            im.setMatrixAt(i, tmp);
-          });
-          im.instanceMatrix.needsUpdate = true;
-        });
+        // 회전하는 별 소행성. 인스턴스 x 메시 이중 루프라 여기서 new 를 쓰면
+        // 프레임마다 수십~수백 개의 Matrix4 가 쓰레기가 된다.
+        const mats = this.staroids.mats, meshes = this.staroids.meshes;
+        for (let j = 0; j < meshes.length; j++) {
+          for (let i = 0; i < mats.length; i++) {
+            _m4b.makeRotationY(this.time * 0.6 + i);
+            _m4.copy(mats[i]).multiply(_m4b);
+            meshes[j].setMatrixAt(i, _m4);
+          }
+          meshes[j].instanceMatrix.needsUpdate = true;
+        }
       }
 
       // 외부 에셋 애니메이션

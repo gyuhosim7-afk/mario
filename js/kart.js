@@ -20,10 +20,12 @@
   };
 
   // 미니터보 3단계: [충전 시간, 부스터 지속, 부스터 배율, 스파크 색]
+  // rgb 는 color 의 정수판이다. 매 프레임 스폰하는 파티클에 문자열을 넘기면
+  // three 가 그때마다 정규식으로 파싱하면서 쓰레기를 만든다.
   const MT_STAGES = [
-    { charge: 0.75, dur: 0.55, power: 1.20, color: '#4fc3ff', name: 'BLUE' },
-    { charge: 1.70, dur: 0.85, power: 1.32, color: '#ff9c2a', name: 'ORANGE' },
-    { charge: 2.80, dur: 1.20, power: 1.46, color: '#c264ff', name: 'PURPLE' }
+    { charge: 0.75, dur: 0.55, power: 1.20, color: '#4fc3ff', rgb: 0x4fc3ff, name: 'BLUE' },
+    { charge: 1.70, dur: 0.85, power: 1.32, color: '#ff9c2a', rgb: 0xff9c2a, name: 'ORANGE' },
+    { charge: 2.80, dur: 1.20, power: 1.46, color: '#c264ff', rgb: 0xc264ff, name: 'PURPLE' }
   ];
 
   const SLIP_REQUIRED = 1.15;    // 슬립스트림 발동까지 필요한 시간

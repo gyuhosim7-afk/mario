@@ -10,6 +10,7 @@
       this.enabled = true;
       this.engine = null;
       this.master = null;
+      this.skid = null;
     }
     init() {
       if (this.ctx) return;
@@ -35,6 +36,7 @@
       this.engine = { osc, osc2, g, f };
     }
     stopEngine() {
+      this.stopSkid();
       if (!this.engine) return;
       try { this.engine.osc.stop(); this.engine.osc2.stop(); } catch (e) { /* already stopped */ }
       this.engine = null;
@@ -47,6 +49,44 @@
       e.f.frequency.setTargetAtTime(420 + rpm * 1700, t, 0.08);
       e.g.gain.setTargetAtTime(0.035 + rpm * 0.075 * (load ? 1.25 : 1), t, 0.1);
     }
+
+    /**
+     * 드리프트 타이어 마찰음 (연속음).
+     *
+     * 화이트 노이즈를 밴드패스로 깎아 만든다. 미니터보가 차오를수록 중심
+     * 주파수를 올려서 '차징되고 있다'는 게 소리만으로 느껴지게 한다.
+     * 매번 새로 만들면 노드가 쌓이므로 한 번 만들어 게인만 여닫는다.
+     */
+    _skidNodes() {
+      if (this.skid) return this.skid;
+      if (!this.ctx) return null;
+      const c = this.ctx;
+      // 2초짜리 노이즈 버퍼를 루프로 돌린다 (매 프레임 버퍼를 만들지 않기 위해)
+      const n = Math.floor(c.sampleRate * 2);
+      const buf = c.createBuffer(1, n, c.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+      const src = c.createBufferSource();
+      src.buffer = buf; src.loop = true;
+      const f = c.createBiquadFilter();
+      f.type = 'bandpass'; f.frequency.value = 1800; f.Q.value = 1.6;
+      const g = c.createGain(); g.gain.value = 0;
+      src.connect(f); f.connect(g); g.connect(this.master);
+      src.start();
+      this.skid = { src, f, g };
+      return this.skid;
+    }
+    /** on=드리프트 중, charge=미니터보 충전도 0~1, speed=속도비 0~1 */
+    updateSkid(on, charge, speed) {
+      if (!this.ctx || !this.enabled) return;
+      const s = this._skidNodes();
+      if (!s) return;
+      const t = this.ctx.currentTime;
+      const vol = on ? 0.05 + Math.min(1, speed) * 0.09 : 0;
+      s.g.gain.setTargetAtTime(vol, t, on ? 0.04 : 0.09);
+      s.f.frequency.setTargetAtTime(1500 + Math.min(1, charge) * 1500, t, 0.12);
+    }
+    stopSkid() { if (this.skid) this.skid.g.gain.value = 0; }
 
     blip(freq, dur, type, vol, sweep) {
       if (!this.ctx || !this.enabled) return;

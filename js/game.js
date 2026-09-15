@@ -10,6 +10,22 @@
 
   const CPU_NAMES = ['CPU-01', 'CPU-02', 'CPU-03', 'CPU-04', 'CPU-05', 'CPU-06', 'CPU-07'];
 
+  /* 매 프레임 스폰되는 파티클 색은 전부 미리 정수로 구워 둔다 (문자열 파싱 0) */
+  const EMBER = [0xffd24a, 0xff7a1e];                  // 용암 불티
+  const EXHAUST = [0xffffff, 0xffd66b, 0xff8a2a];      // 부스터 배기
+  const RAINBOW = (() => {                             // 무지개 로드 빛가루 (36단계)
+    const a = [], s = 1, l = 0.7, amp = s * Math.min(l, 1 - l);
+    for (let i = 0; i < 36; i++) {
+      const h = i / 36;
+      const f = (n) => {
+        const kk = (n + h * 12) % 12;
+        return Math.round(255 * (l - amp * Math.max(-1, Math.min(kk - 3, 9 - kk, 1))));
+      };
+      a.push((f(0) << 16) | (f(8) << 8) | f(4));
+    }
+    return a;
+  })();
+
   class World {
     constructor(opts) {
       this.track = opts.track;
@@ -128,10 +144,14 @@
       R.updateParticles(dt);
       if (this.player) R.camera.follow(this.player, dt, {});
 
-      // 엔진음
+      // 엔진음 + 드리프트 타이어 마찰음
       if (this.player) {
-        global.SFX.updateEngine(Math.min(1.3, Math.abs(this.player.speed) / this.player.phys.maxSpeed),
-          this.player.input.throttle > 0);
+        const pl = this.player;
+        const ratio = Math.abs(pl.speed) / pl.phys.maxSpeed;
+        global.SFX.updateEngine(Math.min(1.3, ratio), pl.input.throttle > 0);
+        // 미니터보 충전도를 마찰음 음색에 실어 준다 (소리만 듣고도 차징이 보인다)
+        global.SFX.updateSkid(pl.drifting && !pl.airborne && ratio > 0.12,
+                              pl.driftCharge / K.MT_STAGES[K.MT_STAGES.length - 1].charge, ratio);
       }
     }
 
@@ -488,6 +508,8 @@
 
     /* ---- 주행 파티클 ---- */
     _emitParticles(k, dt) {
+      // 아래 색은 전부 정수 상수다. 매 프레임 도는 코드라 'hsl(...)' 같은
+      // 문자열을 조립해 넘기면 문자열 + 파싱 쓰레기가 초당 수백 개 쌓인다.
       const R = this.renderer;
       const c = Math.cos(k.angle), s = Math.sin(k.angle);
       const rx = k.x - c * 26, ry = k.y - s * 26;
@@ -497,29 +519,29 @@
         const st = K.MT_STAGES[k.driftStage];
         R.spawn(rx + (Math.random() - 0.5) * 24, ry + (Math.random() - 0.5) * 24, 6,
           -c * 60 + (Math.random() - 0.5) * 90, -s * 60 + (Math.random() - 0.5) * 90,
-          40 + Math.random() * 90, 0.32, st.color, 4, 'spark');
+          40 + Math.random() * 90, 0.32, st.rgb, 4, 'spark');
       }
       // 오프로드 흙먼지 / 무지개 빛가루 / 용암 불티
       if (Math.abs(k.speed) > 60) {
         if (k.surface === S.OFFROAD && Math.random() < 0.6) {
           R.spawn(rx, ry, 4, (Math.random() - 0.5) * 70, (Math.random() - 0.5) * 70, 30 + Math.random() * 50,
-            0.6, this.track.theme === 'circuit' ? 'rgba(150,200,110,0.9)' : 'rgba(180,150,120,0.9)', 5, 'smoke');
+            0.6, this.track.theme === 'circuit' ? 0x96c86e : 0xb49678, 5, 'smoke');
         }
         if (this.track.theme === 'rainbow' && k.surface === S.ROAD && Math.random() < 0.85) {
           const hue = (this.time * 240 + k.x * 0.3) % 360;
           R.spawn(rx + (Math.random() - 0.5) * 20, ry + (Math.random() - 0.5) * 20, 5,
             (Math.random() - 0.5) * 130, (Math.random() - 0.5) * 130, 40 + Math.random() * 130,
-            0.5, 'hsl(' + hue + ',100%,70%)', 3.4, 'spark');
+            0.5, RAINBOW[(hue * RAINBOW.length / 360) | 0], 3.4, 'spark');
         }
         if (k.surface === S.LAVA && Math.random() < 0.9) {
           R.spawn(rx, ry, 4, (Math.random() - 0.5) * 120, (Math.random() - 0.5) * 120, 60 + Math.random() * 160,
-            0.5, ['#ffd24a', '#ff7a1e'][(Math.random() * 2) | 0], 4, 'dot');
+            0.5, EMBER[(Math.random() * 2) | 0], 4, 'dot');
         }
       }
       // 부스터 배기 불꽃
       if (k.boostTimer > 0 && Math.random() < 0.9) {
         R.spawn(rx, ry, 8, -c * 140 + (Math.random() - 0.5) * 60, -s * 140 + (Math.random() - 0.5) * 60,
-          20 + Math.random() * 60, 0.32, ['#ffffff', '#ffd66b', '#ff8a2a'][(Math.random() * 3) | 0], 6, 'dot');
+          20 + Math.random() * 60, 0.32, EXHAUST[(Math.random() * 3) | 0], 6, 'dot');
       }
     }
   }

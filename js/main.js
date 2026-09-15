@@ -228,7 +228,7 @@
     togglePause(v) {
       this.paused = v === undefined ? !this.paused : v;
       document.getElementById('pauseOverlay').classList.toggle('hidden', !this.paused);
-      if (this.paused) global.SFX.updateEngine(0, false);
+      if (this.paused) { global.SFX.updateEngine(0, false); global.SFX.stopSkid(); }
     },
 
     toLobby() {
