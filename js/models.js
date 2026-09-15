@@ -218,6 +218,20 @@
 
   function null_face() { return { lids: [], brows: [] }; }
 
+  /* 여덟 명이 공유하는 기어 머티리얼. 캐릭터마다 새로 만들면 같은 색인데도
+   * 머티리얼이 8벌씩 생겨서 병합이 안 되고 드로우콜이 그만큼 늘어난다. */
+  let _gearMat = null;
+  function gearMats() {
+    if (_gearMat) return _gearMat;
+    const dark = mat('#2a2f3c', { rough: 0.4, metal: 0.3, envI: 0.9 });
+    _gearMat = {
+      dark,                                         // 고글 테 · 브리지 · 스트랩 공용
+      strap: mat('#2a2f3c', { rough: 0.62, envI: 0.8, side: T.DoubleSide }),
+      nape: mat('#3d4a78', { rough: 0.42, metal: 0.08, envI: 0.8 })
+    };
+    return _gearMat;
+  }
+
   function buildCharacter(ch) {
     // assets/manifest.json 에 등록된 외부 모델이 있으면 그걸 쓴다
     const ext = global.Assets && global.Assets.character(ch.id);
@@ -434,15 +448,7 @@
       case 'bbiyak': {
         const beak = cone(2.2 * S, 4.4 * S, detail, front * 1.02, H(-headR * 0.30), 0, 8);
         beak.rotation.z = -Math.PI / 2; headJ.add(beak);
-        const strap = cyl(headR * 0.98, headR * 0.98, 1.6 * S, dark, 0, H(headR * 0.52), 0, 16);
-        strap.rotation.x = Math.PI / 2; strap.rotation.z = Math.PI / 2; strap.scale.set(1, 1, 0.82);
-        headJ.add(strap);
-        [-1, 1].forEach(sd => {
-          const ring = torus(2.1 * S, 0.6 * S, trim, front * 0.52, H(headR * 0.6), sd * headR * 0.42);
-          ring.rotation.y = Math.PI / 2; headJ.add(ring);
-          const lens = sphere(1.8 * S, mat('#9fd8ff', { rough: 0.15, metal: 0.3 }), front * 0.56, H(headR * 0.6), sd * headR * 0.42, 10);
-          lens.scale.set(0.4, 1, 1); headJ.add(lens);
-        });
+        // 고글/스트랩은 공통 레이싱 기어가 달아 준다 (switch 아래)
         const sc = torus(3.3 * S, 1.4 * S, trim, 0, B(neckY - chestY - 0.6 * S), 0);
         sc.rotation.x = Math.PI / 2; torso.add(sc);
         const scarfJ = wobbleJoint(torso, -2 * S, B(neckY - chestY - 1.4 * S), 1.4 * S,
@@ -621,6 +627,90 @@
           });
         break;
       }
+    }
+
+    /* ---------- 레이싱 기어 (여덟 명 공통 디자인 언어) ----------
+     *
+     * 코코 일러스트에서 뽑은 규칙을 전원에게 적용한다. 색만 캐릭터별로 바꾸면
+     * 서로 다른 종족이어도 '같은 대회에 나온 팀'으로 읽힌다.
+     *
+     *   헬멧  크라운(캐릭터색 광택 플라스틱) + 남색 넥가드 + 트림 링
+     *   고글  다크 프레임 + 반투명 렌즈 + 뒤통수 스트랩
+     *   칼라  목에 두르는 링
+     *
+     * 렌즈를 반투명으로 둔 건 의도다. 불투명하게 하면 눈·눈꺼풀·눈썹이 전부
+     * 가려져 표정 시스템(js/rig.js)이 통째로 죽는다. 일러스트에서도 고글 너머로
+     * 눈이 비친다.
+     */
+    const gear = ch.gear || {};
+    const GM = gearMats();
+    const RIM = Math.PI * 0.30;                    // 크라운이 끝나는 각 (눈썹 위)
+    if (gear.helmet && gear.helmet !== 'none') {
+      const hr = headR * 1.1;
+      // 광택을 세게 주면 정면 하이라이트는 예쁘지만 빛을 등진 옆·뒤가 새까맣게
+      // 죽어서 '남색 헬멧'처럼 보인다. 도색된 플라스틱 정도로 눌러 둔다.
+      // 클리어코트는 일부러 안 쓴다. 눈에 띄는 차이 없이 픽셀당 BRDF 로브만
+      // 하나 더 붙어서 카트 8대면 헬멧 8개분이 그대로 비용이 된다.
+      const shellMat = mat(gear.shell || c.accent, { rough: 0.34, metal: 0, envI: 0.95 });
+      // 아래 절반은 어두운 남색 쪽으로 눌러 투톤으로 만든다. 처음엔 남색 조각을
+      // 뒤통수에 따로 붙였는데, 게임에서 제일 많이 보는 각도가 바로 뒤통수라
+      // 새까만 사각형 스티커처럼 보였다. 헬멧 자체를 투톤으로 나누는 게 맞다.
+      const lowMat = mat(new T.Color(gear.shell || c.accent).lerp(new T.Color('#3d4a78'), 0.7),
+        { rough: 0.4, metal: 0.06, envI: 0.85 });
+      const trimMat = mat(c.trim, { rough: 0.35, metal: 0.25, envI: 1.0 });
+      // 헬멧이 정수리에만 얹히면 비니로 보인다. 관자놀이까지 내려와야 헬멧이다.
+      // 그래서 두 조각으로 만든다:
+      //   크라운  눈썹 위(theta 0~RIM)를 전방위로 덮는 뚜껑
+      //   스커트  RIM 아래로 옆·뒤만 덮고 얼굴 앞 ±60도는 비워 둔다
+      // 앞을 비우는 게 핵심이다. 통으로 씌우면 눈썹과 고글이 헬멧 안에 묻혀
+      // 표정 시스템(js/rig.js)이 통째로 안 보인다.
+      const FRONT_OPEN = Math.PI * 0.333;                  // 얼굴 개구부 반각
+      const skirtPhi = Math.PI * 2 - FRONT_OPEN * 2;
+      if (gear.helmet === 'full') {
+        const crown = mesh(geo('helmC' + hr.toFixed(2), () =>
+          new T.SphereGeometry(hr, 26, 14, 0, Math.PI * 2, 0, RIM)), shellMat);
+        crown.position.y = hc; headJ.add(crown);
+      }
+      // phi 0 은 -x(뒤통수)다. 뒤통수를 중심으로 좌우로 펼치면 앞이 열린다.
+      const skirt = mesh(geo('helmS' + hr.toFixed(2) + gear.helmet, () =>
+        new T.SphereGeometry(hr, 26, 14, -skirtPhi / 2, skirtPhi,
+          gear.helmet === 'full' ? RIM * 0.98 : RIM * 0.6,
+          Math.PI * 0.50 - (gear.helmet === 'full' ? RIM * 0.98 : RIM * 0.6))), lowMat);
+      skirt.position.y = hc; headJ.add(skirt);
+      // 챙 트림: 크라운과 스커트의 경계. 눈썹 위라 한 바퀴 둘러도 얼굴을 안 가린다.
+      const ring = torus(hr * Math.sin(RIM) * 1.01, 0.62 * S, trimMat, 0, hc + hr * Math.cos(RIM), 0);
+      ring.rotation.x = Math.PI / 2; headJ.add(ring);
+    }
+    if (gear.goggles !== false && ch.id !== 'volt') {
+      const frameMat = GM.dark;
+      // 렌즈는 '유리'로 읽혀야 한다. 너무 투명하면 아예 안 보이고, 불투명하면
+      // 눈·눈꺼풀·눈썹을 다 가려 표정이 죽는다. 0.5 + 약한 자발광이 접점이었다.
+      const lensMat = mat(gear.lens || '#9fd8ff', {
+        rough: 0.04, metal: 0.05, envI: 2.8, coat: 1, coatRough: 0.02,
+        emissive: gear.lens || '#9fd8ff', emissiveIntensity: 0.32,
+        transparent: true, opacity: 0.58
+      });
+      const gy = hc + headR * 0.10;                // 눈 높이 (헬멧 챙과 띄운다)
+      const gz = headR * 0.40, gr = headR * 0.40;
+      [-1, 1].forEach(sd => {
+        // 테는 얇게. 굵게 하면 새까만 덩어리가 얼굴 절반을 먹고 렌즈가 안 보인다.
+        const rim = torus(gr, 0.34 * S, frameMat, front * 0.94, gy, sd * gz);
+        rim.rotation.y = Math.PI / 2; headJ.add(rim);
+        const lens = sphere(gr * 1.0, lensMat, front * 0.97, gy, sd * gz, 18);
+        lens.scale.set(0.16, 1, 1); lens.castShadow = false; headJ.add(lens);
+      });
+      headJ.add(box(1.1 * S, 0.8 * S, gz * 1.05, frameMat, front * 0.93, gy, 0));
+      // 스트랩: 정면 ±57도를 비운 얇은 띠. CylinderGeometry 의 theta 90도가 +x(정면).
+      const sr = headR * 1.02;
+      const strap = mesh(geo('gstrap' + sr.toFixed(2), () =>
+        new T.CylinderGeometry(sr, sr, 0.95 * S, 30, 1, true, Math.PI / 2 + 1.0, Math.PI * 2 - 2.0)),
+        GM.strap);
+      strap.position.y = gy; headJ.add(strap);
+    }
+    if (gear.collar) {
+      const col = torus(torsoR * 0.86, 1.3 * S, mat(gear.collar, { rough: 0.5, envI: 0.9 }),
+        0, chestY + (neckY - chestY) - 0.7 * S, 0);
+      col.rotation.x = Math.PI / 2; torso.add(col);
     }
 
     root.userData.scaleClass = S;
