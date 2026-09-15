@@ -167,7 +167,9 @@
           }
         });
         world.start();
-        this.renderer.setQualityMode(cfg.quality || 'auto');
+        // cfg.quality 는 0(낮음)일 수 있으므로 falsy 검사를 쓰면 안 된다.
+        this.renderer.setQualityMode(cfg.quality === undefined || cfg.quality === null
+                                     ? 3 : cfg.quality);
         // 자동 강등이 일어나면 알려준다. 사용자가 '왜 갑자기 흐릿해졌지' 하지 않도록,
         // 그리고 렉을 제보할 때 어느 단계까지 내려갔는지 알 수 있도록.
         const QN = ['낮음', '보통', '높음', '최고'];
@@ -180,6 +182,11 @@
           this.hud.showToast('성능 확보를 위해 그래픽 품질을 [' + QN[q] + '] 으로 낮췄습니다 (F3 진단)',
                              '#ffd166');
         };
+        // 고정 품질이라 자동 강등이 없다. 프레임이 계속 모자라면 방법만 알려준다.
+        this.renderer.onPerfWarn = (fps) => {
+          this.hud.showToast('프레임이 낮습니다 (' + Math.round(fps) +
+                             'fps) — 로비 > 그래픽 품질을 [자동] 으로 바꾸면 자동 조절됩니다', '#ffd166');
+        };
         // HUD 는 매 프레임 CPU 로 전체를 다시 칠한다. 품질 단계와 같이 해상도를 내린다.
         const hudBudget = (q) => [1100000, 1600000, 2500000, 2500000][q];
         this.hud.setPixelBudget(hudBudget(this.renderer.quality));
@@ -191,10 +198,11 @@
         // 하드웨어 가속이 꺼져 있으면 알려주고 즉시 품질을 낮춘다
         const g = this.renderer.gpuInfo();
         if (g.software) {
-          const auto = !cfg.quality || cfg.quality === 'auto';
-          if (auto) this.renderer.setQuality(0);
-          this.hud.showToast(auto ? '소프트웨어 렌더링 — 품질 최저로 전환'
-                                  : '소프트웨어 렌더링 — 하드웨어 가속을 켜세요', '#ff9a8a');
+          // 소프트웨어 렌더링은 취향이 아니라 능력 문제라 고정 품질이어도 내린다.
+          const auto = cfg.quality === 'auto';
+          this.renderer.setQuality(0);
+          this.hud.showToast('소프트웨어 렌더링 — 품질 최저로 전환' + (auto ? '' : ' (하드웨어 가속을 켜세요)'),
+                             '#ff9a8a');
         }
         this.renderer.particles.length = 0;
         this.renderer.camera.reset(world.player);
@@ -259,6 +267,7 @@
       const now = performance.now();
       let dt = (now - this.lastT) / 1000;
       this.lastT = now;
+      const rawDt = dt;                  // 클램프 전 실제 경과 (fps 계측용)
       if (dt > 0.05) dt = 0.05;          // 프레임 드랍 보호
       const w = this.world;
       if (!w) return;
@@ -270,7 +279,7 @@
         }
         w.update(dt);
       }
-      this.renderer.render(w, this.paused ? 0 : dt);
+      this.renderer.render(w, this.paused ? 0 : dt, this.paused ? 0 : rawDt);
       this.hud.draw(w, this.paused ? 0 : dt);
     }
   };

@@ -263,16 +263,18 @@
       this.hazardNodes = new Map();
       this._itemTpl = {};
       this._composerOn = true;
-      // 적응형 품질: 프레임레이트가 낮으면 블룸/그림자/해상도를 단계적으로 낮춘다
-      // 어떤 기기인지 모르는 상태에서 최고 품질로 시작하면 첫 몇 초가 반드시
-      // 버벅인다. 중간에서 시작해 프레임이 남으면 올라간다 (_adapt).
-      // 소프트웨어 렌더링은 gpuInfo() 로 판별해 main.js 에서 즉시 0 으로 내린다.
-      this.quality = 2;
+      // 품질은 기본값이 '최고 고정'이다.
+      // 적응형(auto)은 단계가 바뀔 때마다 셰이더를 다시 컴파일하므로 레이스
+      // 도중에 눈에 띄게 멈춘다. 그 멈춤이 낮은 프레임보다 더 거슬린다는
+      // 판단이라 기본을 고정으로 두고, 필요하면 로비에서 '자동'을 고를 수 있게 한다.
+      // 소프트웨어 렌더링만은 능력 판정이라 main.js 에서 고정값과 무관하게 내린다.
+      this.quality = 3;
       this._envOn = true;          // 환경맵은 품질 2 이상에서만 (setQuality 가 갱신)
       this.onQualityChange = null;  // 자동 강등을 사용자에게 알리기 위한 콜백
-      this.qualityMode = 'auto';        // 'auto' | 0~3 고정
+      this.onPerfWarn = null;       // 고정 품질인데 프레임이 안 나올 때 1회 안내
+      this.qualityMode = 3;             // 'auto' | 0~3 고정
       this._baseDpr = Math.min(2, window.devicePixelRatio || 1);
-      this._perf = { acc: 0, frames: 0, good: 0, fps: 0, ms: 0 };
+      this._perf = { acc: 0, frames: 0, good: 0, slow: 0, fps: 0, ms: 0 };
     }
 
     /** 실제로 어떤 GPU 위에서 도는지 조회 (하드웨어 가속 확인용) */
@@ -334,6 +336,10 @@
       this.gl.setPixelRatio(dpr);
       if (this.w) this.resize(this.w, this.h);
       this._composerOn = q >= 3;
+      // 셰이더를 다시 컴파일해야 하는 설정이 실제로 바뀌었는지만 따진다.
+      // 해상도만 달라졌는데 전체 머티리얼을 무효화하면 수백 개를 다시 컴파일하며
+      // 화면이 통째로 멈춘다 (품질이 바뀔 때 멈춘다는 제보의 원인).
+      const prev = this._shaderState || {};
       const shadows = q >= 1;
       this.gl.shadowMap.enabled = shadows;
       if (this.sun) {
@@ -345,11 +351,15 @@
         }
       }
       // 표면 디테일 셰이더 / 시언은 픽셀당 비용이 커서 저사양에서는 내려야 한다
-      if (global.Surface) global.Surface.quality(q >= 3 ? 2 : (q >= 2 ? 1 : 0));   // 2=전부 1=코트만 0=끔
+      const surf = q >= 3 ? 2 : (q >= 2 ? 1 : 0);                                 // 2=전부 1=코트만 0=끔
+      if (global.Surface && surf !== prev.surf) global.Surface.quality(surf);
       // 환경맵 샘플링도 저사양에서는 완전히 뺀다 (카트에만 걸려 있어도 비싸다)
       const envOn = q >= 2;
       if (envOn !== this._envOn) { this._envOn = envOn; this._refreshEnv(); }
-      this.scene.traverse(o => { if (o.isMesh) o.material.needsUpdate = true; });
+      if (shadows !== prev.shadows || surf !== prev.surf || envOn !== prev.env) {
+        this.scene.traverse(o => { if (o.isMesh) o.material.needsUpdate = true; });
+      }
+      this._shaderState = { shadows, surf, env: envOn };
       if (window.console) console.info('[render] quality level ->', q);
       if (this.onQualityChange) this.onQualityChange(q);
     }
@@ -373,7 +383,13 @@
       const fps = p.frames / p.acc;
       p.fps = fps;
       p.acc = 0; p.frames = 0;
-      if (this.qualityMode !== 'auto') return;      // 수동 고정이면 강등하지 않는다
+      if (this.qualityMode !== 'auto') {
+        // 고정 품질에서는 절대 단계를 건드리지 않는다. 대신 프레임이 계속
+        // 모자라면 '자동'으로 바꾸는 방법을 한 번만 알려준다.
+        if (fps < 34 && ++p.slow === 4 && this.onPerfWarn) this.onPerfWarn(fps);
+        if (fps >= 34) p.slow = 0;
+        return;
+      }
 
       if (fps < 48 && this.quality > 0) {
         // 얼마나 모자라는지에 따라 한 번에 1~3단계 강등
@@ -991,9 +1007,12 @@
     }
 
     /* ============ 프레임 ============ */
-    render(world, dt) {
+    render(world, dt, rawDt) {
       this.time += dt;
-      if (dt > 0) this._adapt(dt);
+      // 성능 계측에는 반드시 클램프 전의 실제 경과 시간을 쓴다.
+      // 메인 루프가 dt 를 0.05 로 자르기 때문에 그 값으로 재면 실제로 8fps 여도
+      // 20fps 로 읽힌다 (F3 표시도, 자동 강등 판정도 전부 거짓이 된다).
+      if (dt > 0) this._adapt(rawDt > 0 ? rawDt : dt);
       const cam = this.camera;
 
       // 카트 동기화
