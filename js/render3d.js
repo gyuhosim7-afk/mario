@@ -1044,6 +1044,71 @@
       });
     }
 
+    /**
+     * 고스트 카트.
+     *
+     * 물리 객체가 아니라 기록 재생기라서 world.karts 에 넣지 않는다. 대신
+     * 카트와 똑같은 노드를 하나 만들고 머티리얼만 반투명으로 바꿔 쓴다.
+     * 반투명이라 그림자는 만들지 않는다 - 고스트 그림자가 바닥에 찍히면
+     * 실체가 있는 것처럼 보여서 헷갈린다.
+     */
+    _syncGhost(world, dt) {
+      const g = world.ghost;
+      if (!g) {
+        if (this._ghostNode) { this._ghostNode.group.visible = false; this._ghostNode.blob.visible = false; }
+        return;
+      }
+      if (!this._ghostNode) {
+        const node = this.addKart(g);
+        this.kartNodes.delete(g);            // 일반 카트 루프가 건드리지 않게 뺀다
+        node.model.traverse(o => {
+          if (!o.isMesh || !o.material) return;
+          o.castShadow = false; o.receiveShadow = false;
+          const list = Array.isArray(o.material) ? o.material : [o.material];
+          o.material = list.map(m => {
+            const c = m.clone();
+            c.transparent = true;
+            c.opacity = 0.34;
+            c.depthWrite = false;            // 반투명끼리 앞뒤로 서로를 지우지 않게
+            c.color.lerp(new T.Color('#9fe8ff'), 0.45);
+            if (c.emissive) c.emissive.setHex(0x000000);
+            return c;
+          });
+          if (o.material.length === 1) o.material = o.material[0];
+        });
+        node.blob.material = node.blob.material.clone();
+        node.blob.material.opacity = 0.16;
+        this._ghostNode = node;
+      }
+      const node = this._ghostNode;
+      node.group.visible = true;
+      // LOD 로 갈아끼우면 불투명 모델이 튀어나온다. 고스트는 항상 근경 모델.
+      node.lodOn = false;
+      if (node.lod) node.lod.visible = false;
+      node.model.visible = true;
+      this._syncGhostTransform(node, g, dt);
+    }
+
+    _syncGhostTransform(node, k, dt) {
+      const m = node.model;
+      node.group.position.set(k.x, k.z, k.y);
+      node.group.rotation.y = -k.angle;
+      node.group.scale.setScalar(k.scale || 1);
+      m.rotation.y = 0; m.rotation.z = 0; m.position.y = 0;
+      if (!m.userData.rig) {
+        const lean = k.drifting ? k.driftDir * 0.16 : -(k.input.steer || 0) * 0.05;
+        m.rotation.x += (lean - m.rotation.x) * Math.min(1, dt * 8);
+      }
+      if (global.Rig && m.userData.rig) global.Rig.update(m, k, dt, this.time);
+      const raw = k.speed * dt * 0.14;
+      const spin = raw < 0.34 ? raw : 0.34 + (raw - 0.34) * 0.18;
+      for (const w of m.userData.wheels) w.rotation.z -= spin;
+      const steerAng = (k.input.steer || 0) * 0.4 + (k.drifting ? k.driftDir * 0.25 : 0);
+      for (const w of m.userData.frontWheels) w.rotation.y = -steerAng;
+      node.blob.position.set(k.x, 1.8, k.y);
+      node.blob.visible = k.z < 320;
+    }
+
     /* ============ 프레임 ============ */
     render(world, dt, rawDt) {
       this.time += dt;
@@ -1060,9 +1125,15 @@
         this._syncKart(node, dt || 0.016);
       }
       this._syncHazards(world, dt || 0.016);
+      this._syncGhost(world, dt || 0.016);
 
-      // 아이템 박스 (리스폰 중이면 축소)
-      if (this.boxMeshes) {
+      // 아이템 박스 (리스폰 중이면 축소).
+      // 타임어택은 아이템이 나오지 않으므로 상자 자체를 숨긴다.
+      // 먹히지도 않는 상자가 코스에 떠 있으면 고장난 것처럼 보인다.
+      if (this.boxMeshes && world.timeAttack) {
+        for (const im of this.boxMeshes) im.visible = false;
+      } else if (this.boxMeshes) {
+        for (const im of this.boxMeshes) im.visible = true;
         const boxes = this.track.itemBoxes;
         for (let i = 0; i < boxes.length; i++) {
           const b = boxes[i];

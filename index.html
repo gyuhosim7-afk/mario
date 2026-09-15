@@ -110,6 +110,20 @@
       <div class="slots" id="playerSlots"></div>
       <div class="room-foot">
         <label class="cpu-diff">
+          모드
+          <select id="raceMode">
+            <option value="gp" selected>그랑프리 (CPU 7대)</option>
+            <option value="ta">타임어택 (혼자 + 고스트)</option>
+          </select>
+        </label>
+        <label class="cpu-diff" id="ghostRow">
+          고스트
+          <select id="ghostUse">
+            <option value="1" selected>내 최고 기록과 주행</option>
+            <option value="0">끄기</option>
+          </select>
+        </label>
+        <label class="cpu-diff">
           CPU 난이도
           <select id="cpuDiff">
             <option value="0.45">易 - 초보</option>
@@ -253,6 +267,7 @@
 <script src="js/track.js"></script>
 <script src="js/kart.js"></script>
 <script src="js/ai.js"></script>
+<script src="js/ghost.js"></script>
 <script src="js/render3d.js"></script>
 <script src="js/hud.js"></script>
 <script src="js/audio.js"></script>

@@ -106,6 +106,28 @@
       ctx.fillText('LAP   ' + fmtTime(world.raceTime - me.lastLapStamp), 14 * u, 82 * u);
       ctx.restore();
 
+      /* ---------- 타임어택: 고스트와의 시간 차 ---------- */
+      if (world.timeAttack) {
+        ctx.save();
+        ctx.translate(18 * u, 116 * u);
+        const d = world.ghostDelta;
+        const has = typeof d === 'number' && isFinite(d);
+        // 앞서면 파랑, 뒤지면 빨강. 숫자보다 색이 먼저 읽힌다.
+        const col = !has ? 'rgba(200,214,235,0.9)' : (d < 0 ? '#7dffb0' : '#ff8a8a');
+        panel(ctx, 0, 0, 214 * u, has ? 54 * u : 34 * u, 'rgba(10,12,22,0.55)');
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.font = '700 ' + (12 * u) + 'px system-ui, sans-serif';
+        ctx.fillStyle = 'rgba(200,214,235,0.85)';
+        ctx.fillText(world.ghost ? 'GHOST ' + fmtTime(world.ghostBest) : '고스트 없음 (기록 중)',
+                     12 * u, 21 * u);
+        if (has) {
+          ctx.font = '900 ' + (26 * u) + 'px ui-monospace, monospace';
+          ctx.fillStyle = col;
+          ctx.fillText((d < 0 ? '-' : '+') + Math.abs(d).toFixed(2) + 's', 12 * u, 46 * u);
+        }
+        ctx.restore();
+      }
+
       /* ---------- 우상단: 실시간 순위표 ---------- */
       ctx.save();
       const rowH = 25 * u, listW = 216 * u;

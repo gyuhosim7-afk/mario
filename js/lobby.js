@@ -52,9 +52,26 @@
         cpuDiff: document.getElementById('cpuDiff'),
         gfx: document.getElementById('gfxQuality'),
         lapCount: document.getElementById('lapCount'),
+        mode: document.getElementById('raceMode'),
+        ghostUse: document.getElementById('ghostUse'),
+        ghostRow: document.getElementById('ghostRow'),
         myPing: document.getElementById('myPing')
       };
       this._initPreview();
+
+      // 모드 전환: 타임어택이면 CPU 난이도가 의미 없고 고스트 선택이 의미 있다
+      const syncMode = () => {
+        const ta = this.$.mode.value === 'ta';
+        this.$.ghostRow.style.display = ta ? '' : 'none';
+        this.$.cpuDiff.parentElement.style.display = ta ? 'none' : '';
+        // init 중에는 아직 트랙 카드도 파티 룸도 만들어지지 않았다.
+        // 여기서 그리려 들면 this.slots[0] 에서 터지고 로비가 통째로 멈춘다.
+        if (this.$.trackCards.children.length) this.renderTracks();
+        if (this.slots.length) this.renderRoom();
+      };
+      this.$.mode.addEventListener('change', () => { global.SFX.sfx('ui'); syncMode(); });
+      this.$.lapCount.addEventListener('change', () => this.renderTracks());
+      syncMode();
 
       this.$.tabs.addEventListener('click', e => {
         const b = e.target.closest('.tab'); if (!b) return;
@@ -349,7 +366,8 @@
           '<span class="diff">' + '★'.repeat(t.difficulty) + '</span>' +
           '<canvas width="220" height="74"></canvas>' +
           '<div class="tinfo"><div class="tn">' + t.name + '</div>' +
-          '<div class="ts">' + t.subtitle + ' · ' + this.$.lapCount.value + ' LAPS</div>' +
+          '<div class="ts">' + t.subtitle + ' · ' + this.$.lapCount.value + ' LAPS' +
+          (this.$.mode.value === 'ta' ? bestLabel(t.id, +this.$.lapCount.value) : '') + '</div>' +
           '<div class="td">' + t.desc + '</div></div>';
         el.appendChild(card);
         drawTrackThumb(card.querySelector('canvas'), t);
@@ -387,7 +405,10 @@
 
     renderRoom() {
       const el = this.$.slots;
-      el.innerHTML = this.slots.map(s => {
+      // 타임어택은 혼자 달린다. CPU 슬롯을 보여줄 이유가 없다.
+      const ta = this.$.mode && this.$.mode.value === 'ta';
+      const shown = ta ? this.slots.slice(0, 1) : this.slots;
+      el.innerHTML = shown.map(s => {
         const c = s.combo;
         const st = c.stats;
         const pingCls = s.ping < 45 ? 'good' : (s.ping < 90 ? 'mid' : 'bad');
@@ -401,9 +422,15 @@
           '<span class="st ' + (s.ready ? 'ready' : 'wait') + '">' + (s.ready ? 'READY' : 'WAITING') + '</span>' +
           '</div>';
       }).join('');
-      const readyCount = this.slots.filter(s => s.ready).length;
-      const all = readyCount === this.slots.length;
-      this.$.roomStatus.textContent = readyCount + '/' + this.slots.length + ' READY' + (all ? ' — 방장 시작 가능' : '');
+      const readyCount = shown.filter(s => s.ready).length;
+      const all = readyCount === shown.length;
+      if (ta) {
+        const b = global.Ghost && global.Ghost.bestTime(this.sel.track, +this.$.lapCount.value);
+        this.$.roomStatus.textContent = '타임어택 · ' +
+          (b ? '내 기록 ' + fmtTime(b) : '기록 없음 — 이번 주행이 첫 고스트가 됩니다');
+      } else {
+        this.$.roomStatus.textContent = readyCount + '/' + shown.length + ' READY' + (all ? ' — 방장 시작 가능' : '');
+      }
       this.$.btnStart.disabled = !all;
       this.$.btnReady.textContent = this.slots[0].ready ? 'READY 취소' : 'READY';
     },
@@ -424,10 +451,25 @@
         laps: +this.$.lapCount.value,
         skill: +this.$.cpuDiff.value,
         quality: this.$.gfx.value === 'auto' ? 'auto' : +this.$.gfx.value,
-        opponents: this.slots.slice(1).map(s => ({ name: s.name, combo: s.combo }))
+        mode: this.$.mode.value,
+        ghost: this.$.ghostUse.value === '1',
+        // 타임어택은 혼자 달린다. CPU 를 아예 만들지 않는다.
+        opponents: this.$.mode.value === 'ta'
+          ? [] : this.slots.slice(1).map(s => ({ name: s.name, combo: s.combo }))
       });
     }
   };
+
+  /** 트랙 카드에 붙일 최고 기록 라벨 (기록이 없으면 빈 문자열) */
+  function bestLabel(trackId, laps) {
+    const t = global.Ghost && global.Ghost.bestTime(trackId, laps);
+    if (!t) return ' · <b style="color:#9fe8ff">기록 없음</b>';
+    return ' · <b style="color:#ffd54a">BEST ' + fmtTime(t) + '</b>';
+  }
+  function fmtTime(t) {
+    const m = Math.floor(t / 60), s = t - m * 60;
+    return m + "'" + (s < 10 ? '0' : '') + s.toFixed(3).replace('.', '"');
+  }
 
   /* 트랙 썸네일 (전체 트랙 생성 없이 제어점만으로 그린다) */
   function drawTrackThumb(cv, def) {

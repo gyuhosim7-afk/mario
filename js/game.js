@@ -42,6 +42,12 @@
       this.onFinish = opts.onFinish || function () {};
       this.results = [];
       this.rocketWindow = false;
+      /* ---- 타임어택 / 고스트 ---- */
+      this.timeAttack = !!opts.timeAttack;
+      this.rec = null;          // 이번 주행 기록기 (완주하면 최고 기록과 비교)
+      this.ghost = null;        // 재생 중인 과거 기록 (Ghost.Playback)
+      this.ghostBest = opts.ghostBest || null;   // 그 기록의 완주 시간
+      this.ghostSaved = false;  // 결과 화면에 '신기록' 을 띄울지
     }
 
     addKart(k, isPlayer) {
@@ -54,6 +60,22 @@
     start() {
       this.karts.forEach((k, i) => k.placeAt(this.track.startSlots[i]));
       this._updateStandings();
+      if (this.timeAttack && this.player && global.Ghost) {
+        this.rec = new global.Ghost.Recorder(this.player.combo);
+      }
+    }
+
+    /** 재생할 고스트를 건다 (없으면 그냥 호출하지 않는다) */
+    setGhost(playback) {
+      this.ghost = playback;
+      this.ghostDelta = null;      // 지금 내 위치 기준 시간 차 (음수 = 내가 앞섬)
+      if (playback) {
+        playback.buildProgress(this.track);
+        playback.seek(0);          // 출발 전에도 그리드에 세워 둔다
+        this.ghostBest = playback.time;
+        // 내 진행도도 같은 기준(출발선 기준 상대값)으로 읽는다
+        this._progBase = this.player ? this.player.totalProgress : 0;
+      }
     }
 
     /* --------------------------------------------------- */
@@ -134,9 +156,26 @@
         this._emitParticles(k, dt);
       }
 
+      // 타임어택: 내 주행을 기록하고, 과거 기록을 같은 시간축으로 재생한다.
+      // 고스트는 물리를 돌지 않으므로 충돌·아이템·순위 어디에도 끼지 않는다.
+      // 카운트다운 중에는 기록하지 않는다. 샘플 0 = raceTime 0 이어야
+      // 재생(seek)과 시간 차 계산이 맞는다.
+      if (this.rec && this.player && !this.player.finished && this.state === 'RACING') {
+        this.rec.sample(this.player, dt);
+      }
+      if (this.ghost) {
+        this.ghost.seek(this.raceTime);
+        if (this.player && this.state === 'RACING') {
+          const gt = this.ghost.timeAt(this.player.totalProgress - this._progBase);
+          this.ghostDelta = gt === null ? null : this.raceTime - gt;
+        }
+      }
+
       this._slipstream(dt);
       this._kartCollisions();
-      this._itemBoxes(dt);
+      // 타임어택에서는 아이템을 뺀다. 무작위로 로켓이 걸리고 안 걸리고에 따라
+      // 기록이 몇 초씩 흔들리면 고스트와 비교하는 의미가 없다.
+      if (!this.timeAttack) this._itemBoxes(dt);
       this._thwompHits();
       this._updateHazards(dt);
       this._updateStandings();
@@ -163,11 +202,22 @@
       this.results.push(k);
       if (k.isPlayer) {
         this.state = 'FINISHED';
-        this.hud.showBig('FINISH!', '#ffd54a', 1.8);
+        if (this.rec) this._saveGhost(k.finishTime);
+        this.hud.showBig(this.ghostSaved ? '신기록!' : 'FINISH!',
+                         this.ghostSaved ? '#7dff9a' : '#ffd54a', 1.8);
         global.SFX.sfx('finish');
         setTimeout(() => this.onFinish(this._resultTable()), 2600);
       }
     }
+    /** 이번 주행이 더 빠르면 고스트를 덮어쓴다 */
+    _saveGhost(time) {
+      const G = global.Ghost;
+      if (!G || !this.rec || !(time > 0)) return;
+      const prev = G.bestTime(this.track.id, this.track.laps);
+      if (prev !== null && prev <= time) return;
+      this.ghostSaved = G.save(this.track.id, this.track.laps, this.rec.finish(time));
+    }
+
     _resultTable() {
       const rest = this.karts.filter(k => !k.finished)
         .sort((a, b) => b.totalProgress - a.totalProgress);

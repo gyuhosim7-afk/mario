@@ -152,8 +152,10 @@
       steps.push(() => {
         title.textContent = '그리드 정렬 중…';
         bar.style.width = '100%';
+        const ta = cfg.mode === 'ta';
         const world = new global.Game.World({
           track, renderer: this.renderer, hud: this.hud,
+          timeAttack: ta,
           onFinish: (res) => this.showResults(res)
         });
         // 스타팅 그리드: 무작위 배치
@@ -167,6 +169,16 @@
           }
         });
         world.start();
+        // 타임어택: 저장된 내 최고 기록을 고스트로 띄운다 (없으면 그냥 혼자 달린다)
+        if (ta && cfg.ghost && global.Ghost) {
+          const rec = global.Ghost.load(track.id, track.laps);
+          if (rec) {
+            world.setGhost(new global.Ghost.Playback(rec));
+            this.hud.showToast('고스트: 내 최고 기록 ' + fmtLap(rec.time) + ' 과 함께 주행합니다', '#9fe8ff');
+          } else {
+            this.hud.showToast('이 트랙 기록이 없습니다 — 이번 주행이 첫 고스트가 됩니다', '#9fe8ff');
+          }
+        }
         // cfg.quality 는 0(낮음)일 수 있으므로 falsy 검사를 쓰면 안 된다.
         this.renderer.setQualityMode(cfg.quality === undefined || cfg.quality === null
                                      ? 3 : cfg.quality);
@@ -283,6 +295,13 @@
       this.hud.draw(w, this.paused ? 0 : dt);
     }
   };
+
+  /** 1'23"456 형식 */
+  function fmtLap(t) {
+    const m = Math.floor(t / 60), s = t - m * 60;
+    return m + "'" + (s < 10 ? '0' : '') + s.toFixed(3).replace('.', '"');
+  }
+  global.fmtLap = fmtLap;
 
   window.addEventListener('DOMContentLoaded', () => App.init());
   global.App = App;

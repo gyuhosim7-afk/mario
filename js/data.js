@@ -32,16 +32,15 @@
       id: 'bbiyak', name: '삐약', cls: 'light', clsName: '경량급',
       stats: { speed: 2.0, accel: 5.0, weight: 1.5, handling: 4.75, offroad: 4.0 },
       colors: { body: '#f7d94a', accent: '#ffa726', trim: '#f26d3d', belly: '#fff3c4', detail: '#f2892e', eye: '#2a1d10' },
-      // 레이싱 기어: 헬멧 크라운 없음(밴드) · 고글 · 칼라는 기존 스카프로 대체
-      gear: { helmet: 'full', shell: '#ff9a1f', lens: '#ffe07a', collar: null },
+      gear: { helmet: 'none', goggles: false, collar: null },
       desc: '경량 가속형. 피격 회복과 초반 가속이 가장 빠르다.',
-      flavor: '고글을 이마에 걸친 노란 병아리 파일럿. 목에 두른 주황 스카프가 주행풍에 길게 날리고, 꽁지깃이 가속할 때마다 파르르 떨린다. 스타트 라인에서 가장 먼저 튀어나가는 쪽.'
+      flavor: '주황 스카프를 목에 두른 노란 병아리 파일럿. 목에 두른 주황 스카프가 주행풍에 길게 날리고, 꽁지깃이 가속할 때마다 파르르 떨린다. 스타트 라인에서 가장 먼저 튀어나가는 쪽.'
     },
     {
       id: 'momo', name: '모모', cls: 'light', clsName: '경량급',
       stats: { speed: 1.75, accel: 5.25, weight: 1.25, handling: 5.0, offroad: 4.25 },
       colors: { body: '#f7ecf1', accent: '#f48fb1', trim: '#7ec8e3', belly: '#ffffff', detail: '#f4a8c0', eye: '#5a3550' },
-      gear: { helmet: 'band', shell: '#ff6f9c', lens: '#ffc2d6', collar: '#7ec8e3' },
+      gear: { helmet: 'none', goggles: false, collar: '#7ec8e3' },
       desc: '최경량. 코너 탈출 속도와 오프로드 복귀력이 뛰어나다.',
       flavor: '길게 늘어진 두 귀를 뒤로 눕히고 달리는 흰 토끼. 코너에서 귀가 원심력으로 바깥쪽으로 휘고, 둥근 꼬리가 시트 뒤로 삐져나와 있다.'
     },
@@ -49,8 +48,7 @@
       id: 'volt', name: '볼트', cls: 'light', clsName: '경량급',
       stats: { speed: 2.75, accel: 4.5, weight: 2.5, handling: 4.25, offroad: 3.5 },
       colors: { body: '#c6d2e0', accent: '#35c8f0', trim: '#22364f', belly: '#8fa3ba', detail: '#7ef9ff', eye: '#7ef9ff' },
-      // 볼트는 바이저가 고글 역할을 한다. 헬멧/고글 없이 칼라만.
-      gear: { helmet: 'none', shell: null, lens: null, collar: '#35c8f0', goggles: false },
+      gear: { helmet: 'none', goggles: false, collar: '#35c8f0' },
       desc: '경량급 중 최고속 지향. 안정적인 라인 유지가 강점.',
       flavor: '각진 금속 헤드에 가로로 긴 시안색 바이저를 단 소형 로봇. 머리 위 안테나 끝의 구슬이 속도에 비례해 밝게 점멸하고, 가슴 패널의 LED 게이지가 차오른다.'
     },
@@ -59,8 +57,8 @@
       id: 'koko', name: '코코', cls: 'medium', clsName: '중형급',
       stats: { speed: 3.5, accel: 3.5, weight: 3.5, handling: 3.5, offroad: 3.0 },
       colors: { body: '#5fc46a', accent: '#3fa14a', trim: '#e8a13c', belly: '#f2e6b8', detail: '#e8a13c', eye: '#20341f' },
-      // 일러스트 기준 디자인: 초록 헬멧 + 남색 넥가드 + 붉은 칼라 + 호박색 고글
-      gear: { helmet: 'full', shell: '#8fe07a', lens: '#ffc861', collar: '#d0452e' },
+      // 기어는 칼라만 켜 둔다. 헬멧/고글은 helmet:'full', goggles 생략으로 되살아난다
+      gear: { helmet: 'none', goggles: false, collar: '#d0452e' },
       desc: '올라운더 중형급. 속도·가속·핸들링·무게가 모두 균형.',
       flavor: '둥근 주둥이와 커다란 눈을 가진 초록 아기 공룡. 등줄기를 따라 주황색 등지느러미가 세 갈래로 솟아 있고, 크림색 배가 시트 위로 볼록하다.'
     },
@@ -68,8 +66,7 @@
       id: 'tango', name: '탱고', cls: 'medium', clsName: '중형급',
       stats: { speed: 3.75, accel: 3.25, weight: 3.5, handling: 3.25, offroad: 3.25 },
       colors: { body: '#f08a3c', accent: '#d9662a', trim: '#3c4a66', belly: '#f8ead6', detail: '#ffffff', eye: '#3a2210' },
-      // 탱고는 가죽 파일럿 헬멧이 이미 정체성이라 크라운을 씌우지 않는다
-      gear: { helmet: 'none', shell: null, lens: '#ffd9a8', collar: '#3c4a66' },
+      gear: { helmet: 'none', goggles: false, collar: '#3c4a66' },
       desc: '중형급 속도형. 직선 구간에서 조금 더 뻗는다.',
       flavor: '가죽 파일럿 헬멧을 눌러쓴 주황 여우. 끝이 하얀 커다란 꼬리가 시트 뒤에서 균형추처럼 흔들리고, 귀 끝의 검은 털이 헬멧 밖으로 삐죽 나와 있다.'
     },
@@ -77,7 +74,7 @@
       id: 'luna', name: '루나', cls: 'medium', clsName: '중형급',
       stats: { speed: 3.25, accel: 3.75, weight: 3.25, handling: 3.75, offroad: 3.25 },
       colors: { body: '#8b6fd6', accent: '#6b4fc4', trim: '#ffd54a', belly: '#efe6ff', detail: '#f4a8c0', eye: '#ffd54a' },
-      gear: { helmet: 'band', shell: '#c9a7ff', lens: '#ffe06a', collar: null },
+      gear: { helmet: 'none', goggles: false, collar: null },
       desc: '중형급 핸들링형. 연속 코너 구간에서 라인이 깔끔하다.',
       flavor: '뾰족한 귀와 금빛 눈을 가진 보라 고양이. 목에 감은 노란 스카프가 나부끼고, 긴 꼬리가 코너 방향으로 먼저 기울며 무게 중심을 잡는다.'
     },
@@ -86,7 +83,7 @@
       id: 'bumper', name: '범퍼', cls: 'heavy', clsName: '중량급',
       stats: { speed: 4.5, accel: 2.5, weight: 4.75, handling: 2.5, offroad: 2.75 },
       colors: { body: '#7d8ea3', accent: '#48607d', trim: '#e8e2d0', belly: '#9fb0c4', detail: '#e8e2d0', eye: '#20262e' },
-      gear: { helmet: 'band', shell: '#e8e2d0', lens: '#a8d4ff', collar: '#48607d' },
+      gear: { helmet: 'none', goggles: false, collar: '#48607d' },
       desc: '중량급. 충돌 시 밀어내는 힘이 강하고 최고속이 높다.',
       flavor: '콧등에 굵은 상아빛 뿔이 솟은 청회색 코뿔소. 어깨에 덧댄 철판 장갑이 충돌 자국으로 우그러져 있고, 핸들을 쥔 손이 그립을 삼킬 만큼 크다.'
     },
@@ -94,8 +91,7 @@
       id: 'magma', name: '마그마', cls: 'heavy', clsName: '중량급',
       stats: { speed: 5.0, accel: 2.0, weight: 5.0, handling: 2.0, offroad: 2.5 },
       colors: { body: '#4a2f28', accent: '#ff5a1e', trim: '#2a1a16', belly: '#6b4438', detail: '#ff7a10', eye: '#ffca4a' },
-      // 골렘은 뿔 때문에 헬멧을 못 쓴다. 열에 그을린 스모크 고글 + 칼라.
-      gear: { helmet: 'none', shell: null, lens: '#ff9a4a', collar: '#ff5a1e' },
+      gear: { helmet: 'none', goggles: false, collar: '#ff5a1e' },
       desc: '파워형 중량급. 최고 속도와 무게 최상, 가속·핸들링 최하.',
       flavor: '운전석을 가득 채우는 암석 골렘. 각진 현무암 표면의 갈라진 틈으로 용암이 흐르며 붉게 맥동하고, 정수리의 두 뿔은 열기에 그을려 끝이 검다. 브레이크를 밟을 때마다 관절 틈에서 불티가 새어 나온다.'
     }
