@@ -310,6 +310,17 @@
       const w = this.world;
       if (!w) return;
 
+      try {
+        this._frame(dt, rawDt, w);
+      } catch (e) {
+        // 루프에서 예외가 나면 렌더와 HUD 가 통째로 안 돌아 화면이 그대로 얼어붙는다.
+        // 사용자 눈에는 '차가 멈춘' 것처럼 보이고 원인을 알 길이 없다.
+        // 한 번만 잡아서 화면에 띄우고, 이후 프레임은 계속 굴린다.
+        this._crash(e);
+      }
+    },
+
+    _frame(dt, rawDt, w) {
       if (!this.paused) {
         const ins = this.input2 ? [this.input, this.input2] : [this.input];
         for (let i = 0; i < ins.length; i++) {
@@ -322,6 +333,29 @@
       }
       this.renderer.render(w, this.paused ? 0 : dt, this.paused ? 0 : rawDt);
       this.hud.draw(w, this.paused ? 0 : dt);
+    },
+
+    /** 루프 예외를 화면에 드러낸다 (조용히 멈추는 것보다 낫다) */
+    _crash(e) {
+      this._crashCount = (this._crashCount || 0) + 1;
+      if (this._crashCount > 1) return;          // 매 프레임 같은 오류를 도배하지 않는다
+      try { console.error('[loop]', e); } catch (_) { /* 무시 */ }
+      const msg = (e && e.message ? e.message : String(e)).slice(0, 120);
+      try {
+        this.hud.showToast('오류가 발생했습니다 — ' + msg + ' (F3 로 진단, 새로고침으로 복구)', '#ff8a8a');
+        this.hud.showBig('ERROR', '#ff6a6a', 3);
+      } catch (_) { /* HUD 까지 죽었으면 DOM 으로 */ }
+      let box = document.getElementById('crashBox');
+      if (!box) {
+        box = document.createElement('div');
+        box.id = 'crashBox';
+        box.style.cssText = 'position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:99999;' +
+          'background:rgba(120,12,12,0.94);color:#fff;font:600 13px ui-monospace,monospace;' +
+          'padding:10px 16px;border-radius:10px;max-width:90vw;white-space:pre-wrap;line-height:1.5';
+        document.body.appendChild(box);
+      }
+      box.textContent = '게임 루프 오류\n' + msg +
+        '\n브라우저 콘솔에 전체 스택이 있습니다. 새로고침하면 복구됩니다.';
     }
   };
 
