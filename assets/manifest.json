@@ -1,10 +1,15 @@
 {
   "characters": {
-    "bbiyak": {
-      "file": "characters/bbiyak/quaternius-blue-soldier.glb",
-      "height": 32,
-      "yaw": 90,
-      "clip": "Idle"
-    }
+    "bbiyak": { "file": "characters/bbiyak/quaternius-blue-soldier.glb", "height": 32, "yaw": 90, "clip": "Idle" },
+    "momo": { "file": "characters/bbiyak/quaternius-blue-soldier.glb", "height": 32, "yaw": 90, "clip": "Idle" },
+    "volt": { "file": "characters/bbiyak/quaternius-blue-soldier.glb", "height": 32, "yaw": 90, "clip": "Idle" },
+    "koko": { "file": "characters/bbiyak/quaternius-blue-soldier.glb", "height": 32, "yaw": 90, "clip": "Idle" },
+    "tango": { "file": "characters/bbiyak/quaternius-blue-soldier.glb", "height": 32, "yaw": 90, "clip": "Idle" },
+    "luna": { "file": "characters/bbiyak/quaternius-blue-soldier.glb", "height": 32, "yaw": 90, "clip": "Idle" },
+    "bumper": { "file": "characters/bbiyak/quaternius-blue-soldier.glb", "height": 32, "yaw": 90, "clip": "Idle" },
+    "magma": { "file": "characters/bbiyak/quaternius-blue-soldier.glb", "height": 32, "yaw": 90, "clip": "Idle" }
+  },
+  "props": {
+    "kart": { "file": "characters/kart-oopi.glb", "height": 20, "yaw": 90 }
   }
 }

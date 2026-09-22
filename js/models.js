@@ -970,6 +970,21 @@
     g.userData.body = bodyNode;
     wheels.forEach(w => { w.userData.baseY = w.position.y; });
 
+    // 외부 GLB 카트가 등록되어 있으면 본체만 교체하고, 기존 바퀴·조향·충돌 데이터는 유지한다.
+    // 이렇게 하면 새 모델의 외형을 쓰면서도 레이스 물리와 파츠 시스템은 그대로 작동한다.
+    const externalKart = global.Assets && global.Assets.prop('kart');
+    if (externalKart) {
+      bodyNode.visible = false;
+      wheels.forEach(w => { w.visible = false; });
+      bodyNode.remove(driver);
+      g.add(driver);
+      driver.position.set(-L * 0.05, 13.2, 0);
+      externalKart.position.set(0, 0, 0);
+      externalKart.userData.external = true;
+      g.add(externalKart);
+      g.userData.externalKart = externalKart;
+    }
+
     g.userData.dims = { L, W, wr };
     if (LOD) {
       // 원경용: 관절 경계를 모두 없애 머티리얼 단위로만 병합한다.
