@@ -932,9 +932,6 @@
       // LOD 모델은 관절이 통째로 병합돼 있어 리그·바퀴를 돌려봐야 화면에
       // 반영되지 않는다. 계산 자체를 건너뛴다 (원경 카트의 CPU 비용 0).
       if (!node.lodOn) {
-        if (global.Assets && m.userData.driver && m.userData.driver.userData.external) {
-          global.Assets.setState(m.userData.driver, k);
-        }
         // 드라이버 착좌 리그 (팔 IK · 상체 롤 · 머리) — 멀리 있는 카트는 생략
         if (global.Rig && m.userData.rig && camD < 700) global.Rig.update(m, k, dt, this.time);
 
@@ -1129,9 +1126,6 @@
       if (!m.userData.rig) {
         const lean = k.drifting ? k.driftDir * 0.16 : -(k.input.steer || 0) * 0.05;
         m.rotation.x += (lean - m.rotation.x) * Math.min(1, dt * 8);
-      }
-      if (global.Assets && m.userData.driver && m.userData.driver.userData.external) {
-        global.Assets.setState(m.userData.driver, k);
       }
       if (global.Rig && m.userData.rig) global.Rig.update(m, k, dt, this.time);
       const raw = k.speed * dt * 0.14;

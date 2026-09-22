@@ -116,36 +116,11 @@
         const wanted = rec.opt.clip
           ? rec.animations.find(a => a.name === rec.opt.clip) || rec.animations[0]
           : rec.animations[0];
-        const initialAction = mixer.clipAction(wanted);
-        initialAction.play();
+        mixer.clipAction(wanted).play();
         this.mixers.push(mixer);
         clone.userData.mixer = mixer;
-        clone.userData.animationClips = rec.animations;
-        clone.userData.activeClip = wanted.name;
-        clone.userData.activeAction = initialAction;
       }
       return clone;
-    },
-
-    /** 외부 리그의 상태를 카트 주행 상태에 맞는 authored clip으로 전환한다. */
-    setState(driver, k) {
-      const mixer = driver && driver.userData && driver.userData.mixer;
-      const clips = driver && driver.userData && driver.userData.animationClips;
-      if (!mixer || !clips || !clips.length) return;
-      const next = k.state === 'SPINOUT' || k.state === 'KNOCKBACK' ? 'Roll'
-        : k.airborne ? 'Jump'
-        : k.boostTimer > 0 || Math.abs(k.speed || 0) > 45 ? 'Run'
-        : Math.abs(k.speed || 0) > 4 ? 'Walk' : 'Idle';
-      if (driver.userData.activeClip === next) return;
-      const clip = clips.find(c => c.name === next) || clips.find(c => c.name === 'Idle') || clips[0];
-      if (!clip) return;
-      const action = mixer.clipAction(clip);
-      if (driver.userData.activeAction && driver.userData.activeAction !== action) {
-        driver.userData.activeAction.fadeOut(0.18);
-      }
-      action.reset().fadeIn(0.18).play();
-      driver.userData.activeAction = action;
-      driver.userData.activeClip = clip.name;
     },
 
     character(id) { return this.chars[id] ? this._instance(this.chars[id]) : null; },
