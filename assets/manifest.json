@@ -1,3 +1,10 @@
 {
-  "characters": {}
+  "characters": {
+    "bbiyak": {
+      "file": "characters/bbiyak/quaternius-blue-soldier.glb",
+      "height": 32,
+      "yaw": 90,
+      "clip": "Idle"
+    }
+  }
 }
