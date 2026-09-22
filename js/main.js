@@ -115,7 +115,7 @@
 
       steps.push(async () => {
         // 외부 GLB 에셋이 있으면 먼저 불러온다 (없으면 즉시 통과)
-        if (global.Assets) {
+        if (global.Assets && !global.Assets._attempted) {
           title.textContent = '외부 에셋 확인 중…';
           await global.Assets.init();
         }

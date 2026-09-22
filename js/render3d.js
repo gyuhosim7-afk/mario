@@ -859,22 +859,6 @@
     /* ============ 카트 ============ */
     addKart(kart) {
       const model = global.Models.buildKart(kart.combo);
-      // 레이스 컨텍스트에서도 외부 카트가 반드시 적용되도록 한 번 더 보장한다.
-      // 로비 프리뷰와 레이스가 서로 다른 WebGL 컨텍스트를 사용해도 모델 교체가 유지된다.
-      if (global.Assets && !model.userData.externalKart) {
-        const externalKart = global.Assets.prop('kart');
-        const driver = model.userData.driver;
-        const body = model.userData.body;
-        if (externalKart && driver && body) {
-          body.remove(driver);
-          model.add(driver);
-          driver.position.set(-2.2, 13.2, 0);
-          body.visible = false;
-          externalKart.userData.external = true;
-          model.add(externalKart);
-          model.userData.externalKart = externalKart;
-        }
-      }
       const grp = new T.Group();
       grp.add(model);
       // 원경용 저폴리 모델. 지연 생성해서 로딩을 늘리지 않는다 (처음 멀어질 때 만든다).

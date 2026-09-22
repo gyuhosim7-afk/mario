@@ -53,15 +53,8 @@
     loaded: 0,
     failed: [],
 
-    /** 로비와 레이스가 동시에 호출해도 같은 로딩 Promise를 기다리게 한다. */
-    init(base) {
-      if (this._initPromise) return this._initPromise;
-      this._initPromise = this._initInternal(base);
-      return this._initPromise;
-    },
-
     /** manifest 를 읽어 등록된 모델을 모두 불러온다 (없으면 즉시 반환) */
-    async _initInternal(base) {
+    async init(base) {
       if (this._attempted) return this.loaded > 0;   // 세션당 한 번만 조회
       this._attempted = true;
       this.base = base || 'assets/';
@@ -85,11 +78,8 @@
       }
       const fbx = T.FBXLoader ? new T.FBXLoader() : null;
 
-      const fileCache = new Map();
-      const loadOne = (entry) => {
+      const loadOne = (entry) => new Promise(resolve => {
         const opt = typeof entry === 'string' ? { file: entry } : entry;
-        if (fileCache.has(opt.file)) return fileCache.get(opt.file);
-        const job = new Promise(resolve => {
         const url = this.base + opt.file;
         const isFbx = /\.fbx$/i.test(opt.file);
         const onOk = (obj, anims) => resolve({ template: normalize(obj, opt), animations: anims || [], opt });
@@ -102,10 +92,7 @@
             gltf.load(url, r => onOk(r.scene, r.animations), undefined, onErr);
           }
         } catch (e) { onErr(e); }
-        });
-        fileCache.set(opt.file, job);
-        return job;
-      };
+      });
 
       const jobs = [];
       for (const [id, entry] of Object.entries(man.characters || {})) {
