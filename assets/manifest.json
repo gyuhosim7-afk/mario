@@ -1,9 +1,3 @@
 {
-  "characters": {
-    "bbiyak": {
-      "file": "characters/bbiyak/bbiyak-pilot.glb",
-      "height": 31,
-      "yaw": 0
-    }
-  }
+  "characters": {}
 }
