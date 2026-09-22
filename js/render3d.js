@@ -859,21 +859,6 @@
     /* ============ 카트 ============ */
     addKart(kart) {
       const model = global.Models.buildKart(kart.combo);
-      // 로비와 레이스의 생성 타이밍이 달라도 드라이버 외부 GLB를 확실히 적용한다.
-      const currentDriver = model.userData.driver;
-      const characterId = kart.combo && kart.combo.character && kart.combo.character.id;
-      if (global.Assets && characterId && currentDriver && !currentDriver.userData.external) {
-        const externalDriver = global.Assets.character(characterId);
-        if (externalDriver) {
-          externalDriver.position.copy(currentDriver.position);
-          externalDriver.rotation.copy(currentDriver.rotation);
-          externalDriver.scale.copy(currentDriver.scale);
-          currentDriver.visible = false;
-          model.add(externalDriver);
-          model.userData.driver = externalDriver;
-          model.userData.rig = externalDriver.userData.rig || null;
-        }
-      }
       // 레이스 컨텍스트에서도 외부 카트가 반드시 적용되도록 한 번 더 보장한다.
       // 로비 프리뷰와 레이스가 서로 다른 WebGL 컨텍스트를 사용해도 모델 교체가 유지된다.
       if (global.Assets && !model.userData.externalKart) {
