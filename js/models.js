@@ -448,7 +448,37 @@
       case 'bbiyak': {
         const beak = cone(2.2 * S, 4.4 * S, detail, front * 1.02, H(-headR * 0.30), 0, 8);
         beak.rotation.z = -Math.PI / 2; headJ.add(beak);
-        // 고글/스트랩은 공통 레이싱 기어가 달아 준다 (switch 아래)
+        // 삐약 전용 파일럿 캡 + 입체 고글: 렌즈/테/브리지/스트랩을
+        // 분리해 실루엣과 하이라이트를 살린다.
+        const capMat = mat('#263c70', { rough: 0.28, envI: 1.25, coat: 0.5, coatRough: 0.16 });
+        const lensMat = mat('#45d9d3', { rough: 0.08, metal: 0.2, envI: 2.1, coat: 1, coatRough: 0.04,
+          emissive: '#0b5b68', emissiveIntensity: 0.45 });
+        const goggleMat = mat('#182231', { rough: 0.22, metal: 0.7, envI: 1.35 });
+        const cap = sphere(headR * 0.98, capMat, -headR * 0.08, H(headR * 0.74), 0, 14);
+        cap.scale.set(1.02, 0.58, 1.0); headJ.add(cap);
+        const capPeak = rounded(4.4 * S, 1.15 * S, 2.7 * S, 0.42 * S, capMat);
+        capPeak.position.set(front * 0.5, H(headR * 0.58), 0); capPeak.rotation.x = Math.PI / 2; headJ.add(capPeak);
+        [-1, 1].forEach(sd => {
+          const ring = torus(2.18 * S, 0.34 * S, goggleMat, front * 0.78, H(headR * 0.11), sd * headR * 0.38);
+          ring.rotation.y = Math.PI / 2; headJ.add(ring);
+          const lens = sphere(1.86 * S, lensMat, front * 0.84, H(headR * 0.11), sd * headR * 0.38, 14);
+          lens.scale.set(0.22, 0.88, 1.0); lens.castShadow = false; headJ.add(lens);
+          const shine = sphere(0.34 * S, white, front * 1.04, H(headR * 0.40), sd * headR * 0.50, 8);
+          shine.scale.set(0.16, 0.46, 0.22); shine.castShadow = false; headJ.add(shine);
+        });
+        headJ.add(box(1.15 * S, 0.48 * S, headR * 0.34, goggleMat, front * 0.82, H(headR * 0.11), 0));
+        const strap = mesh(geo('bbiyakGoggleStrap', () =>
+          new T.CylinderGeometry(headR * 0.96, headR * 0.96, 0.48 * S, 28, 1, true, Math.PI / 2 + 0.62, Math.PI * 2 - 1.24)), gearMats().strap);
+        strap.position.y = H(headR * 0.11); headJ.add(strap);
+        // 가슴의 파일럿 하네스와 버튼은 근접 카메라에서의 읽힘을 높인다.
+        const harness = mat('#243452', { rough: 0.4, metal: 0.25, envI: 1.0 });
+        torso.add(
+          limb(-torsoR * 0.62, B(3.2 * S), -shZ * 0.55, torsoR * 0.52, B(-0.7 * S), -shZ * 0.55, 0.42 * S, harness),
+          limb(-torsoR * 0.62, B(3.2 * S), shZ * 0.55, torsoR * 0.52, B(-0.7 * S), shZ * 0.55, 0.42 * S, harness),
+          sphere(0.52 * S, detail, torsoR * 0.86, B(1.0 * S), -0.9 * S, 9),
+          sphere(0.52 * S, detail, torsoR * 0.86, B(1.0 * S), 0.9 * S, 9)
+        );
+        // 기존 스카프·날개·꽁지깃에 겹깃을 추가해 실루엣을 풍성하게 한다.
         const sc = torus(3.3 * S, 1.4 * S, trim, 0, B(neckY - chestY - 0.6 * S), 0);
         sc.rotation.x = Math.PI / 2; torso.add(sc);
         const scarfJ = wobbleJoint(torso, -2 * S, B(neckY - chestY - 1.4 * S), 1.4 * S,
@@ -463,6 +493,11 @@
         [-1, 1].forEach(sd => {
           const w = sphere(3.1 * S, accent, -0.6 * S, B(0.2 * S), sd * (torsoR + 0.6 * S), 10);
           w.scale.set(0.9, 1.25, 0.35); torso.add(w);
+          for (let i = 0; i < 3; i++) {
+            const feather = cone((1.25 - i * 0.16) * S, (4.0 - i * 0.35) * S, accent,
+              -1.5 * S - i * 0.35 * S, B(1.0 * S - i * 0.58 * S), sd * (torsoR + 1.0 * S), 7);
+            feather.rotation.z = sd * (1.45 - i * 0.08); feather.rotation.x = -0.12 * sd; torso.add(feather);
+          }
         });
         break;
       }
