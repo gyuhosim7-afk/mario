@@ -861,7 +861,6 @@
       const model = global.Models.buildKart(kart.combo);
       const grp = new T.Group();
       grp.add(model);
-      // 원경용 저폴리 모델. 지연 생성해서 로딩을 늘리지 않는다 (처음 멀어질 때 만든다).
       this.scene.add(grp);
       // 접지 그림자 보조 (블롭)
       const blob = new T.Mesh(
@@ -875,6 +874,14 @@
       this.scene.add(blob);
       this._applyEnv(model);
       const node = { group: grp, model, lod: null, lodOn: false, blob, kart, aura: null };
+      // 원경 모델은 로딩 중에 미리 만든다. 캐릭터가 조각 모델이 된 뒤로는 처음
+      // 만들 때 거친 조각을 한 번 더 해야 해서, 레이스 도중 처음 멀어지는 순간
+      // 만들면 그 프레임이 튄다.
+      if (!kart.isGhost) {
+        try { node.lod = global.Models.buildKartLOD(kart.combo); this._applyEnv(node.lod);
+              grp.add(node.lod); node.lod.visible = false; }
+        catch (e) { node.lod = null; }
+      }
       this.kartNodes.set(kart, node);
       kart.model3d = node;
       return node;
@@ -893,7 +900,9 @@
       // 플레이어가 실제로 들여다보는 건 자기 카트뿐이다.
       const wantLod = (this.quality <= 1 && !k.isPlayer) || (this.quality < 3
         ? camD > (node.lodOn ? 300 : 340)
-        : camD > (node.lodOn ? 480 : 540));
+        // 캐릭터가 조각 모델(머리만 2만 삼각형)이 된 뒤로는 원경 전환을 조금 당긴다.
+        // 이 거리에서 카트는 화면 폭의 1할 남짓이라 거친 조각과 구분이 안 된다.
+        : camD > (node.lodOn ? 380 : 420));
       if (wantLod && !node.lod) {
         try { node.lod = global.Models.buildKartLOD(k.combo); this._applyEnv(node.lod);
               g.add(node.lod); node.lod.visible = false; }

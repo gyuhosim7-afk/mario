@@ -195,7 +195,7 @@
 
         // 깜빡임은 스프링 밖에서 더한다 (스프링을 통과시키면 뭉개진다)
         const lidNow = S.lid + blink * (0.92 - S.lid);
-        for (const l of face.lids) l.node.rotation.z = l.rest + lidNow;
+        for (const l of face.lids) l.node.rotation.z = l.rest + lidNow * (l.gain || 1);
         for (const w of face.brows) {
           w.node.position.y = w.baseY + S.brY;
           w.node.rotation.x = w.side * S.brA;

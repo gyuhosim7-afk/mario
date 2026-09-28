@@ -232,6 +232,25 @@
     return _gearMat;
   }
 
+  /**
+   * 수염: 볼 주머니(조각 머리의 수염 패드)에서 옆으로 뻗는 가는 털 세 가닥.
+   * 예전엔 머리 안에 묻힌 막대라 끝만 튀어나와 흰 점으로 보였다.
+   * pad(sd) = 패드 표면 근처의 시작점 (머리 반지름 단위, 머리 로컬)
+   */
+  function whiskers(headJ, H, u, S, pad, m, fallback) {
+    const sculpt = !!global.Sculpt;
+    [-1, 1].forEach(sd => {
+      const p0 = pad(sd);
+      for (let i = -1; i <= 1; i++) {
+        const a = [p0[0] * u, H(p0[1] * u + i * 0.32 * S), p0[2] * u];
+        const b = [p0[0] * u - 0.9 * S, H(p0[1] * u + i * 1.15 * S + 0.2 * S), p0[2] * u + sd * 4.2 * S];
+        const w = limb(a[0], a[1], a[2], b[0], b[1], b[2], 0.085 * S, sculpt ? m : fallback);
+        w.castShadow = false;
+        headJ.add(w);
+      }
+    });
+  }
+
   function buildCharacter(ch) {
     // assets/manifest.json 에 등록된 외부 모델이 있으면 그걸 쓴다
     const ext = global.Assets && global.Assets.character(ch.id);
@@ -277,16 +296,22 @@
 
     const root = new T.Group();
     const wobblers = [];      // 관성으로 따라 흔들리는 부위
+    // 조각(js/sculpt.js)이 대신할 도형들. 조각이 성공했을 때만 걷어낸다.
+    // 조각 모듈이 없거나 실패하면 이 도형들이 그대로 남아 예전 모습으로 돌아간다.
+    const replaced = [];
+    const R = (o) => { replaced.push(o); return o; };
+    const browSpots = [];
+    const parts = {};         // 조각이 붙을 흔들림 관절 (꼬리 · 귀)
 
     /* ---------- 골반 ---------- */
     const pelvis = joint(0, pelvisY, 0, 'pelvis');
     pelvis.userData.joint = false;   // 정적 -> 카트 본체와 함께 병합
     root.add(pelvis);
     // 골반: 아래가 넓고 위로 좁아지는 회전체
-    const hips = lathe([
+    const hips = R(lathe([
       [0.2, -0.6], [torsoR * 0.62, -0.2], [torsoR * 0.95, 1.0],
       [torsoR * 0.88, 2.4], [torsoR * 0.66, 3.2], [0.2, 3.4]
-    ].map(v => [v[0], v[1] * S]), body, 28);
+    ].map(v => [v[0], v[1] * S]), body, 28));
     hips.scale.set(1, 1, 1.06);
     pelvis.add(hips);
 
@@ -319,6 +344,7 @@
       toe.scale.set(1.0, 0.8, 1.5);
       toe.position.set(1.5 * S, -1.9 * S, 0);
       ankle.add(toe);
+      R(thigh.children[0]); R(shin.children[0]);
       [hip, thigh, knee, shin, ankle].forEach(n => { n.userData.joint = false; });
       legs.push({ hip, thigh, knee, shin, ankle });
     });
@@ -327,26 +353,26 @@
     const torso = joint(0, torsoPivot, 0, 'torso');
     pelvis.add(torso);
     // 몸통: 허리에서 가슴으로 부풀었다가 어깨에서 목으로 좁아지는 회전체
-    const chest = lathe([
+    const chest = R(lathe([
       [0.2, -1.4], [torsoR * 0.74, -0.9], [torsoR * 0.92, 1.2],
       [torsoR * 0.88, 3.0], [torsoR * 1.0, 5.2], [torsoR * 0.93, 7.0],
       [torsoR * 0.66, 8.6], [torsoR * 0.34, 9.4], [0.2, 9.6]
-    ].map(v => [v[0], v[1] * S]), body, 28);
+    ].map(v => [v[0], v[1] * S]), body, 28));
     chest.position.y = chestY - 3.4 * S;
     chest.scale.set(1.0, 1, 0.9);
     torso.add(chest);
     // 배: 앞쪽에만 얹는 밝은 패치
-    const bellyM = sphere(torsoR * 0.8, belly, torsoR * 0.46, chestY - 1.2 * S, 0, 14);
+    const bellyM = R(sphere(torsoR * 0.8, belly, torsoR * 0.46, chestY - 1.2 * S, 0, 14));
     bellyM.scale.set(0.62, 1.2, 0.9);
     torso.add(bellyM);
     // 어깨 볼륨
     [-1, 1].forEach(sd => {
-      const shb = sphere(2.95 * S, body, 0.3 * S, shoY, sd * shZ, 12);
+      const shb = R(sphere(2.95 * S, body, 0.3 * S, shoY, sd * shZ, 12));
       shb.scale.set(1, 0.92, 1.05);
       torso.add(shb);
     });
     // 목: 아래가 굵고 위가 가는 형태
-    torso.add(taperBone(3.2 * S, 2.05 * S, 1.6 * S, body).translateY(neckY - 1.4 * S));
+    torso.add(R(taperBone(3.2 * S, 2.05 * S, 1.6 * S, body)).translateY(neckY - 1.4 * S));
 
     /* ---------- 머리 ---------- */
     const headJ = joint(0, neckY + 1.2 * S, 0, 'head');
@@ -356,17 +382,20 @@
     if (ch.id === 'volt') {
       const hd = rounded(8.2 * S, 8.0 * S, 8.0 * S, 1.6 * S, mat(c.body, { rough: 0.35, metal: 0.75 }));
       hd.position.y = hc; hd.rotation.x = Math.PI / 2;
+      hd.userData.headSurf = true;
       headJ.add(hd);
     } else if (ch.id === 'magma') {
-      const hd = mesh(new T.IcosahedronGeometry(headR * 1.05, 0), mat(c.body, { rough: 0.95, flat: true }));
+      const hd = R(mesh(new T.IcosahedronGeometry(headR * 1.05, 0), mat(c.body, { rough: 0.95, flat: true })));
       hd.position.y = hc; hd.rotation.set(0.3, 0.6, 0.1);
+      hd.userData.headSurf = true;
       headJ.add(hd);
     } else {
-      const hd = sphere(headR, body, 0, hc, 0, 32);
+      const hd = R(sphere(headR, body, 0, hc, 0, 32));
       hd.scale.set(1, 1.03, 0.96);
+      hd.userData.headSurf = true;
       headJ.add(hd);
       // 턱: 아래쪽 앞으로 살짝 나온 볼륨
-      const jawV = sphere(headR * 0.72, body, headR * 0.22, hc - headR * 0.52, 0, 24);
+      const jawV = R(sphere(headR * 0.72, body, headR * 0.22, hc - headR * 0.52, 0, 24));
       jawV.scale.set(1.05, 0.72, 0.95);
       headJ.add(jawV);
     }
@@ -404,39 +433,67 @@
       // 눈은 젖은 표면이다. 여기에 또렷한 하이라이트가 하나 박히면 즉시 살아 있는 캐릭터로 읽힌다
       const eyeMat = mat('#ffffff', { rough: 0.05, envI: 2.2, coat: 1, coatRough: 0.02 });
       const pupilMat = mat(c.eye, { rough: 0.06, envI: 2.0, coat: 1, coatRough: 0.03 });
-      // 눈썹은 표정을 가장 강하게 드러내는 부위다. 또렷하게 보이도록 어둡고 굵게.
-      const browMat = mat(c.eye, { rough: 0.55, envI: 0.6 });
+      // 눈썹은 표정을 가장 강하게 드러내는 부위다. 어두워야 읽힌다.
+      // 눈동자가 밝은 캐릭터(루나 금색 · 볼트 시안)는 눈동자색 대신 몸색을 어둡게 눌러 쓴다.
+      const eyeC = new T.Color(c.eye);
+      const browC = (eyeC.r * 0.3 + eyeC.g * 0.59 + eyeC.b * 0.11) > 0.35
+        ? new T.Color(c.body).lerp(new T.Color('#140c18'), 0.62) : eyeC;
+      const browMat = mat(browC, { rough: 0.62, envI: 0.55 });
       const eyeR = 1.95 * S;
+      // 눈꺼풀: 피부와 같은 결이되 sheen 은 약하게, 색은 아주 조금만 어둡게 (살짝 그늘진 눈두덩)
+      const lidMat = mat(new T.Color(c.body).lerp(new T.Color('#000000'), 0.05), { rough: 0.52, envI: 0.8,
+        sheen: 0.45, sheenRough: 0.45, sheenColor: new T.Color(c.body).lerp(new T.Color('#ffffff'), 0.6).getStyle() });
+      if (SD) SD.detail(lidMat, { scale: 1.5, rough: 0.30, tint: 0.055 });
+      const glintMat = mat('#ffffff', { rough: 0.1, emissive: '#ffffff', emissiveIntensity: 0.35 });
       [-1, 1].forEach(sd => {
-        const ex = front * 0.74, ey = hc + headR * 0.14, ez = sd * headR * 0.4;
-        const e = sphere(eyeR, eyeMat, ex, ey, ez, 12);
-        e.scale.set(0.55, 1.05, 1); headJ.add(e);
-        const pu = sphere(0.95 * S, pupilMat, front * 0.94, hc + headR * 0.12, sd * headR * 0.42, 10);
-        pu.scale.set(0.55, 1.05, 1); headJ.add(pu);
-        headJ.add(sphere(0.42 * S, mat('#ffffff', { rough: 0.1 }), front * 1.02, hc + headR * 0.34, sd * headR * 0.5, 8));
+        const ey = hc + headR * 0.14, ez = sd * headR * 0.4;
+        // 눈은 머리 표면(두개골 타원체) 위에 얹고 표면 법선 쪽으로 살짝 돌려 세운다.
+        // 예전엔 머리 안쪽에 묻어 두고 눈꺼풀 껍질이 앞을 거의 다 덮어서, 흰자는
+        // 안 보이고 눈동자만 껍질을 뚫고 나온 '두건' 처럼 보였다.
+        const cy = (ey - hc - headR * 0.04) / (headR * 1.03), cz = ez / (headR * 0.97);
+        const sx = headR * Math.sqrt(Math.max(0.1, 1 - cy * cy - cz * cz));
+        const yaw = Math.atan2(ez / (0.94 * headR * headR), sx / (headR * headR)) * 0.8;
+        const eg = new T.Object3D();
+        eg.position.set(sx - eyeR * 0.26, ey, ez);
+        eg.rotation.y = -yaw;
+        headJ.add(eg);
+        const e = sphere(eyeR, eyeMat, 0, 0, 0, 16);
+        e.scale.set(0.62, 1.05, 1); eg.add(e);
+        // 눈동자: 흰자 앞면에 얹힌 납작한 렌즈. 살짝 아래·안쪽을 보게 두면 순해 보인다
+        const pu = sphere(eyeR * 0.5, pupilMat, eyeR * 0.5, -eyeR * 0.05, -sd * eyeR * 0.04, 14);
+        pu.scale.set(0.5, 1.12, 1); eg.add(pu);
+        // 반짝임: 눈동자 위 바깥쪽에 붙인다 (눈꺼풀 껍질 안쪽이라 감으면 같이 가려진다)
+        const gl = sphere(eyeR * 0.15, glintMat, eyeR * 0.68, eyeR * 0.3, sd * eyeR * 0.14, 8);
+        gl.castShadow = false; eg.add(gl);
 
-        // 눈꺼풀: 눈알을 감싸는 위쪽 반구 껍질. 눈 중심을 축으로 돌려 덮는다
-        const lidJ = joint(ex, ey, ez, 'lid');
+        // 눈꺼풀: 눈 전체를 감싸는 반구 껍질. 극(+y)이 눈 위쪽에 있고, 관절을 z 로
+        // 돌리면 껍질 가장자리가 눈 앞을 쓸고 내려온다. rig.js 의 lidNow 는
+        // 0(뜸)~0.92(감음) 범위라 gain 으로 각도를 키워 실제 눈꺼풀 행정을 만든다.
+        // 납작한 눈알에 맞춘 타원 껍질이어야 하는데, 스케일을 껍질 쪽에 주면 회전한
+        // 뒤의 모양이 눈알 축과 어긋나 눈알 윗면이 껍질을 뚫고 흰 초승달로 보인다.
+        // 그래서 스케일은 회전 관절 '바깥'(부모)에 준다: 구를 돌린 뒤 타원으로 편다.
+        const lidS = new T.Object3D();
+        lidS.scale.set(0.9, 1.13, 1.08);
+        eg.add(lidS);
+        const lidJ = joint(0, 0, 0, 'lid');
         lidJ.userData.joint = true;               // 병합 경계 (움직여야 하므로)
-        headJ.add(lidJ);
-        const lid = mesh(geo('lid' + eyeR.toFixed(2), () =>
-          new T.SphereGeometry(eyeR * 1.13, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.62)), body);
-        lid.scale.set(0.56, 1.05, 1.02);
+        lidS.add(lidJ);
+        const lid = mesh(geo('lid2' + eyeR.toFixed(2), () =>
+          new T.SphereGeometry(eyeR, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.55)), lidMat);
+        lid.userData.ao = 0.3;                    // 머리 AO 에 파묻혀 새까매지지 않게
         lidJ.add(lid);
-        // +z 가 눈을 덮는 방향이다 (렌더로 확인). 기본은 살짝 열린 눈매
-        lidJ.rotation.z = -0.10;
+        const LID_REST = 1.04, LID_GAIN = -2.5;
+        lidJ.rotation.z = LID_REST + 0.06 * LID_GAIN;
 
-        // 눈썹
-        const browJ = joint(front * 0.86, ey + headR * 0.30, ez, 'brow');
+        // 눈썹: 관절만 먼저 두고 모양은 머리 표면이 확정된 뒤(조각 이후)에 붙인다.
+        // 예전엔 네모난 막대를 눈 높이 앞에 띄워서 선글라스처럼 보였다.
+        // 이제는 눈꺼풀 위로 충분히 올리고, 머리 곡면을 따라 휘는 가는 붓질로 만든다.
+        const browJ = joint(front * 0.86, ey + eyeR * 1.42 + 0.35 * S, ez, 'brow');
         browJ.userData.joint = true;
         headJ.add(browJ);
-        // rounded() 는 마지막에 rotateX(90도) 를 하므로 인자는 (x, z, y) 순으로 먹는다.
-        // 눈썹은 좌우로 길고 앞뒤·위아래로 얇아야 한다.
-        const brow = rounded(1.15 * S, 4.2 * S, 1.05 * S, 0.42 * S, browMat);
-        brow.rotation.x = sd * 0.18;              // 기본: 바깥쪽이 살짝 처진 순한 눈썹
-        browJ.add(brow);
+        browSpots.push({ node: browJ, side: sd, mat: browMat });
 
-        face.lids.push({ node: lidJ, side: sd, rest: -0.10 });
+        face.lids.push({ node: lidJ, side: sd, rest: LID_REST, gain: LID_GAIN });
         face.brows.push({ node: browJ, side: sd, baseY: browJ.position.y });
       });
     }
@@ -446,7 +503,7 @@
     const B = (y) => chestY + y;                // 몸통 로컬 y
     switch (ch.id) {
       case 'bbiyak': {
-        const beak = cone(2.2 * S, 4.4 * S, detail, front * 1.02, H(-headR * 0.30), 0, 8);
+        const beak = R(cone(2.2 * S, 4.4 * S, detail, front * 1.02, H(-headR * 0.30), 0, 8));
         beak.rotation.z = -Math.PI / 2; headJ.add(beak);
         // 고글/스트랩은 공통 레이싱 기어가 달아 준다 (switch 아래)
         const sc = torus(3.3 * S, 1.4 * S, trim, 0, B(neckY - chestY - 0.6 * S), 0);
@@ -456,31 +513,32 @@
         scarfJ.add(limb(0, 0, 0, -6 * S, 3.4 * S, 3.2 * S, 1.3 * S, trim));
         const tailJ = wobbleJoint(torso, -torsoR * 0.9, B(0.6 * S), 0,
           { gx: 0.04, gz: 0.6, stiff: 75, damp: 8, max: 0.5 }, wobblers);
+        parts.tail = tailJ;
         [-1, 0, 1].forEach(i => {
-          const f = cone(1.5 * S, 5.2 * S, accent, 0, i * 1.4 * S, i * 2.2 * S, 6);
+          const f = R(cone(1.5 * S, 5.2 * S, accent, 0, i * 1.4 * S, i * 2.2 * S, 6));
           f.rotation.z = 1.9; f.rotation.x = i * 0.24; tailJ.add(f);
         });
         [-1, 1].forEach(sd => {
-          const w = sphere(3.1 * S, accent, -0.6 * S, B(0.2 * S), sd * (torsoR + 0.6 * S), 10);
+          const w = R(sphere(3.1 * S, accent, -0.6 * S, B(0.2 * S), sd * (torsoR + 0.6 * S), 10));
           w.scale.set(0.9, 1.25, 0.35); torso.add(w);
         });
         break;
       }
       case 'momo': {
         [-1, 1].forEach(sd => {
-          const earJ = wobbleJoint(headJ, sd * headR * 0.34, H(headR * 0.7), 0,
-            { gx: 0.05, gz: 1.1, stiff: 48, damp: 6.5, max: 0.85 }, wobblers);
-          earJ.add(limb(0, 0, 0, sd * headR * 0.6, headR * 1.8, -headR * 0.75, 1.55 * S, body));
-          earJ.add(limb(0, 0.1 * S, 0.5 * S, sd * headR * 0.56, headR * 1.65, -headR * 0.45, 0.85 * S, detail));
+          // 조각 귀는 좌우로 벌려 단다 (도형 귀는 앞뒤로 엇갈려 있었다)
+          const earJ = global.Sculpt
+            ? wobbleJoint(headJ, -headR * 0.18, H(headR * 0.78), sd * headR * 0.36,
+              { gx: 0.05, gz: 1.1, stiff: 48, damp: 6.5, max: 0.85 }, wobblers)
+            : wobbleJoint(headJ, sd * headR * 0.34, H(headR * 0.7), 0,
+              { gx: 0.05, gz: 1.1, stiff: 48, damp: 6.5, max: 0.85 }, wobblers);
+          parts[sd < 0 ? 'earL' : 'earR'] = earJ;
+          earJ.add(R(limb(0, 0, 0, sd * headR * 0.6, headR * 1.8, -headR * 0.75, 1.55 * S, body)));
+          earJ.add(R(limb(0, 0.1 * S, 0.5 * S, sd * headR * 0.56, headR * 1.65, -headR * 0.45, 0.85 * S, detail)));
         });
-        headJ.add(sphere(1.15 * S, detail, front * 0.98, H(-headR * 0.2), 0, 10));
-        [-1, 1].forEach(sd => {
-          for (let i = -1; i <= 1; i++) {
-            const wk = box(3.4 * S, 0.22 * S, 0.22 * S, white, front * 0.85, H(-headR * 0.18 + i * 0.7 * S), sd * headR * 0.42);
-            wk.rotation.y = sd * 0.4; wk.rotation.z = i * 0.16; headJ.add(wk);
-          }
-        });
-        pelvis.add(sphere(2.8 * S, white, -torsoR * 1.0, 1.4 * S, 0, 12));
+        headJ.add(R(sphere(1.15 * S, detail, front * 0.98, H(-headR * 0.2), 0, 10)));
+        whiskers(headJ, H, headR, S, sd => [0.8, -0.3, sd * 0.3], mat('#cdb7c4', { rough: 0.5 }), white);
+        pelvis.add(R(sphere(2.8 * S, white, -torsoR * 1.0, 1.4 * S, 0, 12)));
         break;
       }
       case 'volt': {
@@ -509,97 +567,132 @@
         break;
       }
       case 'koko': {
-        const snout = capsule(2.9 * S, 2.6 * S, body, front * 0.72, H(-headR * 0.22), 0);
+        const snout = R(capsule(2.9 * S, 2.6 * S, body, front * 0.72, H(-headR * 0.22), 0));
         snout.rotation.z = Math.PI / 2; headJ.add(snout);
-        [-1, 1].forEach(sd => headJ.add(sphere(0.55 * S, dark, front * 1.32, H(-headR * 0.1), sd * 1.35 * S, 8)));
+        [-1, 1].forEach(sd => headJ.add(R(sphere(0.55 * S, dark, front * 1.32, H(-headR * 0.1), sd * 1.35 * S, 8))));
         [0, 1, 2].forEach(i => {
-          const sp = cone(1.5 * S - i * 0.22 * S, 4.6 * S - i * 0.7 * S, detail, -torsoR * 0.72, B(2.4 * S - i * 3.0 * S), 0, 6);
+          const sp = R(cone(1.5 * S - i * 0.22 * S, 4.6 * S - i * 0.7 * S, detail, -torsoR * 0.72, B(2.4 * S - i * 3.0 * S), 0, 6));
           sp.rotation.z = 0.55; torso.add(sp);
         });
         const kokoTail = wobbleJoint(pelvis, -torsoR * 0.9, 1.6 * S, 0,
           { gx: 0.045, gz: 0.8, stiff: 60, damp: 7.5, max: 0.6 }, wobblers);
-        kokoTail.add(limb(0, 0, 0, -torsoR * 1.7, -1.4 * S, 0, 1.9 * S, body));
+        parts.tail = kokoTail;
+        kokoTail.add(R(limb(0, 0, 0, -torsoR * 1.7, -1.4 * S, 0, 1.9 * S, body)));
         break;
       }
       case 'tango': {
-        const helm = mesh(new T.SphereGeometry(headR * 1.06, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.58), trim);
-        helm.position.y = H(headR * 0.06); headJ.add(helm);
+        // 가죽 헬멧은 뺐다 (머리에 사발을 엎은 것처럼 보여서). 귀가 그대로 드러난다.
         [-1, 1].forEach(sd => {
-          const ear = cone(1.7 * S, 4.4 * S, body, -headR * 0.1, H(headR * 1.15), sd * headR * 0.6, 7);
+          const ear = R(cone(1.7 * S, 4.4 * S, body, -headR * 0.1, H(headR * 1.15), sd * headR * 0.6, 7));
           ear.rotation.x = sd * 0.32; headJ.add(ear);
-          const tip = cone(1.0 * S, 1.7 * S, dark, -headR * 0.1, H(headR * 1.72), sd * headR * 0.68, 7);
+          const tip = R(cone(1.0 * S, 1.7 * S, dark, -headR * 0.1, H(headR * 1.72), sd * headR * 0.68, 7));
           tip.rotation.x = sd * 0.32; headJ.add(tip);
         });
-        const snout = capsule(2.3 * S, 2.8 * S, body, front * 0.78, H(-headR * 0.26), 0);
+        const snout = R(capsule(2.3 * S, 2.8 * S, body, front * 0.78, H(-headR * 0.26), 0));
         snout.rotation.z = Math.PI / 2; headJ.add(snout);
-        headJ.add(sphere(2.0 * S, detail, front * 1.28, H(-headR * 0.3), 0, 10));
-        headJ.add(sphere(0.95 * S, dark, front * 1.5, H(-headR * 0.22), 0, 8));
+        headJ.add(R(sphere(2.0 * S, detail, front * 1.28, H(-headR * 0.3), 0, 10)));
+        headJ.add(R(sphere(0.95 * S, dark, front * 1.5, H(-headR * 0.22), 0, 8)));
         const foxTail = wobbleJoint(pelvis, -torsoR * 1.0, 1.2 * S, 0,
           { gx: 0.05, gz: 1.0, stiff: 45, damp: 6, max: 0.8 }, wobblers);
+        parts.tail = foxTail;
         for (let i = 0; i < 4; i++) {
-          foxTail.add(sphere((3.2 - i * 0.5) * S, i === 3 ? white : accent, -torsoR * i * 0.62, i * 1.5 * S, 0, 10));
+          foxTail.add(R(sphere((3.2 - i * 0.5) * S, i === 3 ? white : accent, -torsoR * i * 0.62, i * 1.5 * S, 0, 10)));
         }
         break;
       }
       case 'luna': {
         [-1, 1].forEach(sd => {
-          const ear = cone(2.0 * S, 4.3 * S, body, -headR * 0.05, H(headR * 1.05), sd * headR * 0.52, 7);
+          const ear = R(cone(2.0 * S, 4.3 * S, body, -headR * 0.05, H(headR * 1.05), sd * headR * 0.52, 7));
           ear.rotation.x = sd * 0.26; headJ.add(ear);
-          const inner = cone(1.05 * S, 2.4 * S, detail, headR * 0.12, H(headR * 1.02), sd * headR * 0.52, 7);
+          const inner = R(cone(1.05 * S, 2.4 * S, detail, headR * 0.12, H(headR * 1.02), sd * headR * 0.52, 7));
           inner.rotation.x = sd * 0.26; headJ.add(inner);
         });
-        const muzzle = sphere(2.5 * S, belly, front * 0.85, H(-headR * 0.3), 0, 12);
+        const muzzle = R(sphere(2.5 * S, belly, front * 0.85, H(-headR * 0.3), 0, 12));
         muzzle.scale.set(0.7, 0.75, 1.2); headJ.add(muzzle);
-        const nose = cone(0.95 * S, 1.3 * S, detail, front * 1.14, H(-headR * 0.16), 0, 6);
+        const nose = R(cone(0.95 * S, 1.3 * S, detail, front * 1.14, H(-headR * 0.16), 0, 6));
         nose.rotation.z = -Math.PI / 2; headJ.add(nose);
-        [-1, 1].forEach(sd => {
-          for (let i = -1; i <= 1; i++) {
-            const wk = box(3.6 * S, 0.22 * S, 0.22 * S, white, front * 0.82, H(-headR * 0.24 + i * 0.72 * S), sd * headR * 0.44);
-            wk.rotation.y = sd * 0.42; wk.rotation.z = i * 0.18; headJ.add(wk);
-          }
-        });
+        whiskers(headJ, H, headR, S, sd => [0.84, -0.34, sd * 0.28], white, white);
         const sc = torus(3.4 * S, 1.3 * S, trim, 0, B(neckY - chestY - 0.8 * S), 0);
         sc.rotation.x = Math.PI / 2; torso.add(sc);
         const catTail = wobbleJoint(pelvis, -torsoR * 1.1, 1.2 * S, 0,
           { gx: 0.06, gz: 1.2, stiff: 42, damp: 5.8, max: 0.9 }, wobblers);
+        parts.tail = catTail;
         for (let i = 0; i < 4; i++) {
-          catTail.add(sphere((1.9 - i * 0.22) * S, body, -Math.sin(i * 0.5) * 1.4 * S, i * 3.0 * S, 0, 9));
+          catTail.add(R(sphere((1.9 - i * 0.22) * S, body, -Math.sin(i * 0.5) * 1.4 * S, i * 3.0 * S, 0, 9)));
         }
         break;
       }
       case 'bumper': {
-        const snout = sphere(3.7 * S, body, front * 0.72, H(-headR * 0.3), 0, 14);
+        let armorMat = null;
+        const snout = R(sphere(3.7 * S, body, front * 0.72, H(-headR * 0.3), 0, 14));
         snout.scale.set(1.05, 0.8, 1.05); headJ.add(snout);
-        const horn = cone(2.8 * S, 10.5 * S, trim, front * 1.15, H(-headR * 0.02), 0, 10);
+        const horn = R(cone(2.8 * S, 10.5 * S, trim, front * 1.15, H(-headR * 0.02), 0, 10));
         horn.rotation.z = -1.15; headJ.add(horn);
-        const horn2 = cone(1.5 * S, 4.2 * S, trim, front * 0.62, H(headR * 0.66), 0, 8);
+        const horn2 = R(cone(1.5 * S, 4.2 * S, trim, front * 0.62, H(headR * 0.66), 0, 8));
         horn2.rotation.z = -0.85; headJ.add(horn2);
         [-1, 1].forEach(sd => {
           // 코뿔소 귀도 관성으로 펄럭이게 (중량급도 2차 모션이 있어야 뻣뻣해 보이지 않는다)
           const earJ = wobbleJoint(headJ, -headR * 0.55, H(headR * 0.62), sd * headR * 0.72,
             { gx: 0.035, gz: 0.7, stiff: 66, damp: 8, max: 0.5 }, wobblers);
-          const ear = sphere(1.6 * S, body, 0, 1.5 * S, 0, 8);
+          parts[sd < 0 ? 'earL' : 'earR'] = earJ;
+          const ear = R(sphere(1.6 * S, body, 0, 1.5 * S, 0, 8));
           ear.scale.set(0.45, 1.35, 0.75); ear.rotation.x = sd * 0.3; earJ.add(ear);
-          const pl = rounded(6.4 * S, 4.6 * S, 3.4 * S, 1.2 * S, mat(c.accent, { rough: 0.55, metal: 0.45 }));
-          pl.position.set(0.2 * S, shoY + 1.2 * S, sd * (shZ + 0.9 * S)); pl.rotation.z = sd * 0.12;
-          torso.add(pl);
-          for (let i = 0; i < 3; i++) torso.add(sphere(0.6 * S, trim, 2.4 * S, shoY + 2.4 * S, sd * (shZ + 0.9 * S) + (i - 1) * 1.6 * S, 6));
+          // 어깨 장갑: 어깨를 덮는 둥근 철판 두 겹 + 리벳.
+          // 예전엔 네모난 판이라 구명조끼처럼 보였다.
+          const plateM = armorMat || (armorMat = mat(c.accent, { rough: 0.42, metal: 0.55, envI: 1.1, side: T.DoubleSide }));
+          const pd = new T.Object3D();
+          pd.position.set(0.3 * S, shoY + 0.7 * S, sd * (shZ + 0.2 * S));
+          pd.rotation.x = sd * 0.5;
+          torso.add(pd);
+          const capR = 3.9 * S;
+          [[1, 0], [0.84, -1.5 * S]].forEach(([k, dy], li) => {
+            const cap = mesh(geo('pauld' + (capR * k).toFixed(2), () =>
+              new T.SphereGeometry(capR * k, 22, 10, 0, Math.PI * 2, 0, Math.PI * 0.4)), plateM);
+            cap.scale.set(1.18, 0.72, 1.02);
+            cap.position.y = dy;
+            if (li) cap.rotation.x = sd * 0.08;
+            pd.add(cap);
+          });
+          // 리벳: 윗판 가장자리 앞쪽을 따라 세 개
+          for (let i = -1; i <= 1; i++) {
+            const th = Math.PI * 0.33, ph = Math.PI + i * 0.55;
+            pd.add(sphere(0.5 * S, trim,
+              -capR * Math.cos(ph) * Math.sin(th) * 1.18, capR * Math.cos(th) * 0.72, capR * Math.sin(ph) * Math.sin(th) * 1.02, 6));
+          }
         });
         break;
       }
       case 'magma': {
         const crack = emissiveMat(c.detail, c.detail, 2.8);
         [-1, 1].forEach(sd => {
-          const h = cone(2.7 * S, 6.0 * S, mat(c.trim, { rough: 0.95, flat: true }), -headR * 0.15, H(headR * 1.02), sd * headR * 0.58, 6);
+          const h = R(cone(2.7 * S, 6.0 * S, mat(c.trim, { rough: 0.95, flat: true }), -headR * 0.15, H(headR * 1.02), sd * headR * 0.58, 6));
           h.rotation.z = 0.16; h.rotation.x = sd * 0.34; headJ.add(h);
-          const tip = cone(1.2 * S, 2.0 * S, mat('#141014', { rough: 1, flat: true }), -headR * 0.15 - 0.6 * S, H(headR * 1.02 + 3.0 * S), sd * headR * 0.58 + sd * 1.1 * S, 6);
+          const tip = R(cone(1.2 * S, 2.0 * S, mat('#141014', { rough: 1, flat: true }), -headR * 0.15 - 0.6 * S, H(headR * 1.02 + 3.0 * S), sd * headR * 0.58 + sd * 1.1 * S, 6));
           tip.rotation.z = 0.16; tip.rotation.x = sd * 0.34; headJ.add(tip);
         });
         [[front * 0.82, H(headR * 0.52), headR * 0.24, 0.5],
          [front * 0.86, H(-headR * 0.3), -headR * 0.34, -0.7]].forEach(k => {
-          const b = box(1.15 * S, 5.0 * S, 1.15 * S, crack, k[0], k[1], k[2]);
+          // 얼굴을 가로지르는 막대였다. 조각 머리에서는 표면을 따라 흐르는 가는 틈으로 바꾼다
+          const b = R(box(1.15 * S, 5.0 * S, 1.15 * S, crack, k[0], k[1], k[2]));
           b.rotation.z = k[3]; b.castShadow = false; headJ.add(b);
         });
+        if (global.Sculpt) {
+          // 용암 틈: 두개골 표면 위의 점들을 잇는 가는 캡슐 사슬
+          const onHead = (y, z, dip) => {
+            const cy = y - 0.04, cz = z / 0.97;
+            const x = Math.sqrt(Math.max(0.05, 1 - (cy / 1.03) * (cy / 1.03) - cz * cz));
+            return [x * headR + (dip || 0.05) * S, H(y * headR), z * headR];
+          };
+          [[[0.86, 0.02], [0.66, 0.12], [0.5, 0.0], [0.36, 0.1]],
+           [[-0.22, 0.6], [-0.36, 0.7], [-0.5, 0.64]],
+           [[-0.22, -0.6], [-0.4, -0.66], [-0.52, -0.76]]].forEach(line => {
+            for (let i = 0; i + 1 < line.length; i++) {
+              const a = onHead(line[i][0], line[i][1]), b = onHead(line[i + 1][0], line[i + 1][1]);
+              const seg = limb(a[0], a[1], a[2], b[0], b[1], b[2], 0.32 * S, crack);
+              seg.castShadow = false; headJ.add(seg);
+            }
+          });
+        }
         [[torsoR * 0.95, B(1.0 * S), 1.8 * S, 0.6],
          [torsoR * 0.95, B(-3.2 * S), -2.2 * S, -0.4],
          [torsoR * 0.3, B(-0.6 * S), torsoR * 0.92, 0.2]].forEach(k => {
@@ -613,7 +706,7 @@
           rock.position.set(0.4 * S, shoY + 1.0 * S, sd * (shZ + 0.8 * S));
           rock.rotation.set(sd * 0.5, 0.8, 0.3); torso.add(rock);
         });
-        const jaw = rounded(5.2 * S, 2.4 * S, 6.6 * S, 0.8 * S, mat(c.belly, { rough: 0.95, flat: true }));
+        const jaw = R(rounded(5.2 * S, 2.4 * S, 6.6 * S, 0.8 * S, mat(c.belly, { rough: 0.95, flat: true })));
         jaw.position.set(front * 0.5, H(-headR * 0.62), 0); jaw.rotation.x = Math.PI / 2;
         headJ.add(jaw);
         // 정수리 불꽃 갈기 - 속도가 붙으면 뒤로 흩날린다
@@ -713,6 +806,24 @@
       col.rotation.x = Math.PI / 2; torso.add(col);
     }
 
+    /* ---------- 조각: 도형 조립 대신 한 덩어리 살로 ---------- */
+    let sculpted = false;
+    if (global.Sculpt && !ch.noSculpt) {
+      try {
+        sculptCharacter(ch, { root, pelvis, torso, headJ, arms, legs, parts, S, headR, hc,
+          torsoR, chestY, shoY, shZ, neckY });
+        sculpted = true;
+      } catch (e) {
+        console.warn('[sculpt] ' + ch.id + ' 조각 실패, 도형 모델로 대체', e);
+      }
+    }
+    if (sculpted) for (const o of replaced) if (o.parent) o.parent.remove(o);
+    buildBrows(ch, headJ, browSpots, S, headR, hc, sculpted);
+    if (sculpted && browSpots.length) {
+      buildMouth(ch, headJ, S, headR, hc, ch.id === 'magma' ? emissiveMat(c.detail, c.detail, 2.8)
+        : ch.id === 'bbiyak' ? mat(mixC(c.detail, '#4a1a06', 0.55), { rough: 0.5 }) : browSpots[0].mat);
+    }
+
     root.userData.scaleClass = S;
     root.userData.rig = {
       pelvis, torso, head: headJ, arms, legs, wobblers, face,
@@ -720,6 +831,478 @@
       shoulderLocal: arms.map(a => a.shoulder.position.clone())
     };
     return root;
+  }
+
+  /* =============================================================
+   * 조각 레시피 (js/sculpt.js)
+   *
+   * 관절마다 한 덩어리씩 조각한다. 관절 경계를 넘어 하나로 합치면 리그가
+   * 움직일 때 살이 찢어지기 때문이다.
+   *
+   *   골반 관절   엉덩이 + 허벅지 + 정강이 (다리는 착좌 고정이라 함께 굳힌다)
+   *   몸통 관절   가슴 · 배 · 어깨 · 목 · 등지느러미 · 날개깃
+   *   머리 관절   두개골 · 주둥이 · 볼 · 귀 · 뿔 · 부리 · 콧구멍 · 입꼬리
+   *   흔들림 관절 꼬리 · 토끼귀 · 코뿔소귀 (각자의 스프링을 따라 흔들린다)
+   *
+   * 팔은 IK 로 매 프레임 꺾이므로 기존 테이퍼 뼈를 그대로 쓴다. 어깨 볼륨이
+   * 몸통 조각에 들어 있어 이음새를 덮는다. 눈 · 눈꺼풀 · 눈썹 · 장갑 · 신발 ·
+   * 스카프 · 수염 · 장갑판 · 바이저 같은 '다른 재질' 부품도 그대로 둔다.
+   *
+   * 좌표는 캐릭터 루트 기준(=조립 직후 월드)으로 적고, 메쉬를 만든 뒤 관절의
+   * 역행렬로 옮겨 붙인다. 머리는 hp(x, y, z) 로 머리 반지름 단위 좌표를 쓴다.
+   * ============================================================= */
+  const DARK_NOSE = '#1c1c24';
+  const mixC = (a, b, t) => new T.Color(a).lerp(new T.Color(b), t).getStyle();
+
+  /* 값 노이즈 (마그마 암석 표면). 격자 해시를 부드럽게 보간한다 */
+  function hash3(i, j, k) {
+    let h = (i * 374761393 + j * 668265263 + k * 2147483647) | 0;
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
+  }
+  function vnoise(x, y, z) {
+    const i = Math.floor(x), j = Math.floor(y), k = Math.floor(z);
+    const fx = x - i, fy = y - j, fz = z - k;
+    const u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy), w = fz * fz * (3 - 2 * fz);
+    const L = (a, b, t) => a + (b - a) * t;
+    return L(L(L(hash3(i, j, k), hash3(i + 1, j, k), u), L(hash3(i, j + 1, k), hash3(i + 1, j + 1, k), u), v),
+             L(L(hash3(i, j, k + 1), hash3(i + 1, j, k + 1), u), L(hash3(i, j + 1, k + 1), hash3(i + 1, j + 1, k + 1), u), v), w);
+  }
+
+  function sculptCharacter(ch, K) {
+    const SC = global.Sculpt;
+    const c = ch.colors, S = K.S, u = K.headR, tR = K.torsoR;
+    const id = ch.id;
+    const heavy = ch.cls === 'heavy';
+    K.root.updateMatrixWorld(true);
+
+    const V = (a) => new T.Vector3(a[0], a[1], a[2]);
+    const wp = (o, x, y, z) => new T.Vector3(x || 0, y || 0, z || 0).applyMatrix4(o.matrixWorld).toArray();
+    const add3 = (a, x, y, z) => [a[0] + x, a[1] + y, a[2] + z];
+    const lerp3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+    // 머리 관절 로컬, 머리 반지름 단위 -> 루트 좌표
+    const hp = (x, y, z) => wp(K.headJ, x * u, K.hc + y * u, z * u);
+    const E = (p, r) => SC.ellipsoid(p, r);
+    const HE = (x, y, z, rx, ry, rz) => SC.ellipsoid(hp(x, y, z), [rx * u, ry * u, rz * u]);
+    const HS = (x, y, z, r) => SC.sphere(hp(x, y, z), r * u);
+    const HC = (a, b, r1, r2) => SC.roundCone(hp(a[0], a[1], a[2]), hp(b[0], b[1], b[2]), r1 * u, (r2 === undefined ? r1 : r2) * u);
+    const both = (fn) => { fn(-1); fn(1); };
+
+    /* 재질: 원래 몸 재질과 같은 성질 + 정점 색 (색은 조각이 칠한다) */
+    let sm;
+    if (id === 'volt') {
+      sm = mat('#ffffff', { rough: 0.34, metal: 0.55, envI: 1.15 });
+    } else if (id === 'magma') {
+      sm = mat('#ffffff', { rough: 0.92, envI: 0.6, flat: true });
+    } else {
+      sm = mat('#ffffff', { rough: 0.52, envI: 0.85, sheen: 0.95, sheenRough: 0.42,
+        sheenColor: new T.Color(c.body).lerp(new T.Color('#ffffff'), 0.7).getStyle() });
+    }
+    sm.vertexColors = true;
+    if (global.Surface) global.Surface.detail(sm, id === 'volt'
+      ? { scale: 2.2, rough: 0.12, tint: 0.025 } : { scale: 1.5, rough: 0.30, tint: 0.055 });
+
+    const lodK = LOD ? 2.3 : 1;
+    const out = [];
+    /** 한 관절 몫을 조각해서 (캐시에서 꺼내) 관절에 붙인다 */
+    function part(name, joint, build, cell, aoDist, headSurf) {
+      const key = 'sc:' + id + ':' + name + (LOD ? ':L' : '');
+      const ent = SC.cached(key, () => {
+        const sc = build();
+        const g = SC.mesh(sc, { cell: cell * lodK, ao: aoDist });
+        const inv = joint.matrixWorld.clone().invert();
+        g.applyMatrix4(inv);
+        g.computeBoundingSphere();
+        const occ = sc.occluders().map(o => ({ c: V(o.c).applyMatrix4(inv).toArray(), r: o.r }));
+        return { g, occ };
+      });
+      out.push({ joint, g: ent.g, occ: ent.occ, headSurf });
+    }
+
+    /* ------------------------ 다리 + 엉덩이 (골반) ------------------------ */
+    const limbK = heavy ? 1.12 : 1;
+    const rocky = id === 'magma';
+    const rock = (sc, amp, freq) => {
+      if (!rocky) return sc;
+      // 암석: 표면을 울퉁불퉁하게 밀고 당긴다. flatShading 과 합쳐져 깎은 돌이 된다.
+      const d0 = sc.d.bind(sc);
+      sc.d = (x, y, z) => d0(x, y, z) + amp * (vnoise(x * freq, y * freq, z * freq) - 0.5)
+        + amp * 0.45 * (vnoise(x * freq * 2.3 + 7, y * freq * 2.3, z * freq * 2.3) - 0.5);
+      return sc;
+    };
+    part('pelvis', K.pelvis, () => {
+      const sc = new SC.Scene();
+      const P = wp(K.pelvis);
+      sc.add(E(add3(P, 0.3 * S, 1.6 * S, 0), [tR * 0.92, 2.4 * S, tR * 0.98]), 0, c.body, 3);
+      for (const l of K.legs) {
+        const Hp = wp(l.hip), Kn = wp(l.knee), An = wp(l.ankle);
+        sc.add(SC.roundCone(Hp, Kn, 2.5 * S * limbK, 1.9 * S * limbK), 1.4 * S, c.body, 3)
+          .add(SC.roundCone(Kn, An, 1.95 * S * limbK, 1.4 * S * limbK), 0.9 * S, c.body, 3);
+      }
+      // 토끼 꼬리 (시트 뒤로 삐져나온 솜뭉치)
+      if (id === 'momo') sc.add(SC.sphere(add3(P, -tR * 1.0, 1.5 * S, 0), 2.6 * S), 0.8 * S, c.belly, 5);
+      return rock(sc, 0.9 * S, 0.34 / S);
+    }, 0.46 * S, 2.2 * S);
+
+    /* ------------------------ 몸통 ------------------------ */
+    part('torso', K.torso, () => {
+      const sc = new SC.Scene();
+      const Tj = wp(K.torso), Hj = wp(K.headJ);
+      const cY = K.chestY;
+      sc.add(E(add3(Tj, 0.1 * S, 6.0 * S, 0), [tR * 0.95, 5.8 * S, tR * 0.9]), 0, c.body, 3)
+        .add(E(add3(Tj, 0.2 * S, 9.2 * S, 0), [tR * 0.8, 2.4 * S, tR * 1.12]), 2.0 * S, c.body, 3);
+      // 배: 앞으로 볼록한 밝은 패치. 볼륨도 살짝 준다
+      if (id !== 'volt' && id !== 'magma') {
+        sc.add(E(add3(Tj, 1.7 * S, 4.4 * S, 0), [tR * 0.72, 4.2 * S, tR * 0.75]), 1.2 * S, c.belly, 4);
+      } else {
+        sc.paint(E(add3(Tj, 2.4 * S, 4.6 * S, 0), [tR * 0.6, 4.0 * S, tR * 0.62]), c.belly, 2.2 / S);
+      }
+      sc.add(SC.roundCone(add3(Tj, 0, 10.2 * S, 0), add3(Hj, 0, 2.2 * S, 0), 2.6 * S, 2.2 * S), 1.5 * S, c.body, 3);
+      for (const a of K.arms) sc.add(SC.sphere(wp(a.shoulder), 2.7 * S * limbK), 1.8 * S, c.body, 3);
+
+      if (id === 'koko') {
+        // 등지느러미 세 갈래: 등에서 비스듬히 솟은 원뿔, 뿌리는 살로 이어진다
+        const dir = [-Math.sin(0.55), Math.cos(0.55), 0];
+        for (let i = 0; i < 3; i++) {
+          const h = (4.4 - i * 0.7) * S;
+          const cc = add3(Tj, -tR * 0.66, cY + (2.4 - i * 3.0) * S, 0);
+          const base = [cc[0] - dir[0] * h * 0.5, cc[1] - dir[1] * h * 0.5, 0];
+          const tip = [cc[0] + dir[0] * h * 0.5, cc[1] + dir[1] * h * 0.5, 0];
+          sc.add(SC.roundCone(base, tip, (1.45 - i * 0.2) * S, 0.22 * S), 0.6 * S, c.detail, 5);
+        }
+      } else if (id === 'bbiyak') {
+        // 날개깃: 옆구리에 붙은 납작한 깃털 뭉치
+        both(sd => sc.add(SC.xform(SC.ellipsoid([0, 0, 0], [2.4 * S, 3.4 * S, 1.05 * S]),
+          add3(Tj, -0.7 * S, cY + 0.4 * S, sd * (tR * 0.92)), [sd * 0.18, 0, 0.42]), 0.9 * S, c.accent, 5));
+      } else if (id === 'volt') {
+        // 로봇 흉갑: 가슴을 살짝 각지게
+        sc.add(E(add3(Tj, 1.2 * S, 6.2 * S, 0), [tR * 0.7, 4.0 * S, tR * 0.9]), 0.8 * S, c.body, 3);
+      } else if (id === 'bumper') {
+        sc.add(E(add3(Tj, 0.9 * S, 5.0 * S, 0), [tR * 0.85, 4.6 * S, tR * 0.9]), 1.5 * S, c.body, 3);
+      }
+      return rock(sc, 1.0 * S, 0.3 / S);
+    }, 0.44 * S, 2.2 * S);
+
+    /* ------------------------ 머리 ------------------------ */
+    const hard = id === 'volt';                       // 금속 머리는 도형 그대로 (각진 게 맞다)
+    if (!hard) {
+      part('head', K.headJ, () => {
+        const sc = new SC.Scene();
+        const cheeks = (x, y, z, r, col) => both(sd => sc.add(HS(x, y, sd * z, r), 0.25 * u, col || c.body, 3));
+        sc.add(HE(0, 0.04, 0, 1.0, 1.03, 0.97), 0, c.body, 3);
+        switch (id) {
+          case 'koko': {
+            const muzzle = mixC(c.body, c.belly, 0.38);
+            sc.add(HC([0.2, -0.2, 0], [1.0, -0.28, 0], 0.6, 0.46), 0.35 * u, muzzle, 2.2);
+            cheeks(0.36, -0.38, 0.58, 0.28);
+            both(sd => {
+              sc.sub(HS(1.30, 0.03, sd * 0.14, 0.08), 0.07 * u);
+              sc.paint(HS(1.28, 0.03, sd * 0.14, 0.07), mixC(muzzle, '#10200f', 0.6), 3 / S);
+            });
+            break;
+          }
+          case 'tango': {
+            const white = c.detail;
+            sc.add(HC([0.35, -0.22, 0], [1.28, -0.36, 0], 0.48, 0.17), 0.32 * u, c.body, 3);
+            // 볼 갈기: 옆으로 삐친 흰 털
+            both(sd => sc.add(HC([0.2, -0.36, sd * 0.55], [-0.08, -0.66, sd * 1.02], 0.32, 0.06), 0.22 * u, white, 4));
+            sc.paint(HE(0.85, -0.55, 0, 0.8, 0.26, 0.55), white, 2.5 / S);
+            sc.paint(HE(0.45, -0.66, 0, 0.6, 0.3, 0.72), white, 2.5 / S);
+            sc.add(HS(1.40, -0.30, 0, 0.15), 0.06 * u, DARK_NOSE, 8);
+            both(sd => {
+              sc.add(HC([-0.12, 0.62, sd * 0.42], [-0.2, 1.62, sd * 0.8], 0.40, 0.05), 0.2 * u, c.body, 3);
+              sc.sub(HE(0.06, 1.06, sd * 0.6, 0.1, 0.34, 0.15), 0.09 * u);
+              sc.paint(HE(0.06, 1.06, sd * 0.6, 0.16, 0.36, 0.18), c.belly, 3 / S);
+              sc.paint(HS(-0.19, 1.52, sd * 0.77, 0.2), DARK_NOSE, 3 / S);
+            });
+            break;
+          }
+          case 'luna': {
+            both(sd => sc.add(HS(0.84, -0.34, sd * 0.2, 0.27), 0.18 * u, c.belly, 4));
+            sc.add(HS(0.72, -0.56, 0, 0.2), 0.2 * u, c.belly, 4);
+            sc.add(HE(1.07, -0.17, 0, 0.07, 0.08, 0.13), 0.05 * u, c.detail, 8);
+            cheeks(0.36, -0.36, 0.6, 0.3);
+            both(sd => {
+              sc.add(HC([-0.05, 0.62, sd * 0.46], [-0.1, 1.42, sd * 0.74], 0.44, 0.05), 0.2 * u, c.body, 3);
+              sc.sub(HE(0.14, 0.95, sd * 0.57, 0.1, 0.28, 0.15), 0.08 * u);
+              sc.paint(HE(0.14, 0.95, sd * 0.57, 0.16, 0.3, 0.18), c.detail, 3 / S);
+            });
+            break;
+          }
+          case 'momo': {
+            both(sd => sc.add(HS(0.8, -0.3, sd * 0.22, 0.27), 0.2 * u, c.belly, 4));
+            sc.add(HE(1.02, -0.12, 0, 0.08, 0.07, 0.12), 0.04 * u, c.detail, 8);
+            both(sd => sc.add(HE(0.97, -0.5, sd * 0.055, 0.05, 0.1, 0.05), 0.02 * u, '#ffffff', 10));
+            cheeks(0.36, -0.36, 0.58, 0.28);
+            break;
+          }
+          case 'bumper': {
+            const snoutC = mixC(c.body, c.belly, 0.35);
+            sc.add(HC([0.3, -0.25, 0], [1.05, -0.38, 0], 0.62, 0.5), 0.35 * u, snoutC, 2.2);
+            sc.add(SC.chain([hp(0.96, -0.14, 0), hp(1.22, 0.28, 0), hp(1.3, 0.78, 0)],
+              [0.3 * u, 0.17 * u, 0.03 * u]), 0.12 * u, c.detail, 5);
+            sc.add(HC([0.62, 0.40, 0], [0.72, 0.76, 0], 0.16, 0.03), 0.08 * u, c.detail, 5);
+            both(sd => {
+              sc.sub(HS(1.46, -0.38, sd * 0.2, 0.09), 0.07 * u);
+              sc.paint(HS(1.44, -0.38, sd * 0.2, 0.08), mixC(snoutC, '#10141a', 0.6), 3 / S);
+            });
+            cheeks(0.3, -0.4, 0.62, 0.3);
+            break;
+          }
+          case 'bbiyak': {
+            sc.add(HC([0.72, -0.24, 0], [1.34, -0.33, 0], 0.34, 0.06), 0.1 * u, c.detail, 7);
+            sc.add(HC([0.72, -0.40, 0], [1.14, -0.45, 0], 0.22, 0.05), 0.1 * u, c.detail, 7);
+            cheeks(0.4, -0.36, 0.58, 0.28);
+            both(sd => sc.paint(HS(0.62, -0.3, sd * 0.62, 0.15), '#ffae8a', 3 / S));
+            // 정수리 깃털 세 가닥
+            sc.add(HC([-0.1, 0.9, 0], [0.18, 1.38, 0], 0.13, 0.03), 0.1 * u, c.body, 3);
+            sc.add(HC([-0.18, 0.9, 0.06], [-0.2, 1.32, 0.16], 0.11, 0.03), 0.1 * u, c.body, 3);
+            sc.add(HC([-0.25, 0.88, -0.06], [-0.36, 1.26, -0.14], 0.1, 0.03), 0.1 * u, c.body, 3);
+            break;
+          }
+          case 'magma': {
+            // 현무암 머리: 튀어나온 눈두덩 + 각진 턱 + 그을린 두 뿔. 표면은 암석 노이즈
+            sc.add(HE(0.42, 0.52, 0, 0.5, 0.17, 0.8), 0.18 * u, c.body, 3);
+            sc.add(HE(0.42, -0.52, 0, 0.66, 0.36, 0.82), 0.24 * u, c.belly, 3);
+            cheeks(0.3, -0.3, 0.66, 0.3);
+            both(sd => {
+              sc.add(HC([-0.1, 0.66, sd * 0.46], [-0.3, 1.52, sd * 0.94], 0.3, 0.07), 0.14 * u, c.trim, 5);
+              sc.paint(HS(-0.28, 1.42, sd * 0.9, 0.22), '#141014', 3 / S);
+            });
+            return rock(sc, 0.3 * S, 0.55 / S);
+          }
+        }
+        return sc;
+      }, 0.046 * u, 0.26 * u, true);
+    }
+
+    /* ------------------------ 흔들림 관절 (꼬리 · 귀) ------------------------ */
+    const J = K.parts;
+    if (J.tail) {
+      part('tail', J.tail, () => {
+        const sc = new SC.Scene();
+        const o = wp(J.tail);
+        const at = (x, y, z) => add3(o, x * S, y * S, z * S);
+        switch (id) {
+          case 'koko':
+            sc.add(SC.chain([at(1.2, 0.8, 0), at(-3.8, -0.4, 0), at(-7.4, -0.9, 0), at(-9.6, 0.4, 0)],
+              [2.3 * S, 1.75 * S, 1.0 * S, 0.42 * S]), 0, c.body, 3);
+            [[-3.2, 1.2, 0.9], [-6.2, 0.55, 0.65]].forEach(q =>
+              sc.add(SC.roundCone(at(q[0], q[1], 0), at(q[0] - 1.1, q[1] + 1.5, 0), q[2] * S, 0.15 * S), 0.35 * S, c.detail, 6));
+            break;
+          case 'tango':
+            sc.add(SC.chain([at(1, 0.5, 0), at(-2.8, 1.8, 0), at(-5.6, 3.9, 0), at(-7.6, 6.6, 0)],
+              [2.2 * S, 3.2 * S, 3.0 * S, 1.2 * S]), 1.2 * S, c.body, 3);
+            sc.paint(SC.sphere(at(-7.4, 6.4, 0), 2.6 * S), c.detail, 2 / S);
+            break;
+          case 'luna':
+            sc.add(SC.chain([at(0.8, -0.4, 0), at(-1.2, 3, 0), at(-1.3, 6.2, 0), at(0, 8.8, 0), at(1.5, 9.8, 0)],
+              [1.7 * S, 1.5 * S, 1.35 * S, 1.2 * S, 1.0 * S]), 0.6 * S, c.body, 3);
+            sc.paint(SC.sphere(at(1.2, 9.6, 0), 1.6 * S), c.accent, 2 / S);
+            break;
+          case 'bbiyak':
+            [-1, 0, 1].forEach(i => sc.add(SC.roundCone(at(0.8, 0, i * 0.5),
+              at(-4.4, 1.6 + (1 - Math.abs(i)) * 0.9, i * 2.1), 1.3 * S, 0.22 * S), 0.5 * S, c.accent, 4));
+            break;
+        }
+        return sc;
+      }, 0.4 * S, 1.6 * S);
+    }
+    both(sd => {
+      const ear = J[sd < 0 ? 'earL' : 'earR'];
+      if (!ear) return;
+      part('ear' + sd, ear, () => {
+        const sc = new SC.Scene();
+        const o = wp(ear);
+        if (id === 'momo') {
+          // 길게 늘어진 토끼귀: 앞뒤로 납작한 타원체를 뒤로 눕히고 바깥으로 벌린다
+          const pos = add3(o, -0.3 * u, 0.86 * u, sd * 0.2 * u), rot = [sd * 0.3, 0, 0.42];
+          sc.add(SC.sphere(o, 0.26 * u), 0, c.body, 3);
+          sc.add(SC.xform(SC.ellipsoid([0, 0, 0], [0.17 * u, 0.98 * u, 0.33 * u]), pos, rot), 0.2 * u, c.body, 3);
+          sc.sub(SC.xform(SC.ellipsoid([0.15 * u, 0.08 * u, 0], [0.09 * u, 0.74 * u, 0.2 * u]), pos, rot), 0.05 * u);
+          sc.paint(SC.xform(SC.ellipsoid([0.12 * u, 0.08 * u, 0], [0.16 * u, 0.76 * u, 0.22 * u]), pos, rot), c.detail, 3 / S);
+        } else {
+          const pos = add3(o, 0, 0.24 * u, 0), rot = [sd * 0.38, 0, 0.25];
+          sc.add(SC.xform(SC.ellipsoid([0, 0, 0], [0.12 * u, 0.3 * u, 0.2 * u]), pos, rot), 0, c.body, 3);
+          sc.sub(SC.xform(SC.ellipsoid([0.1 * u, 0.04 * u, 0], [0.06 * u, 0.2 * u, 0.12 * u]), pos, rot), 0.03 * u);
+          sc.paint(SC.xform(SC.ellipsoid([0.09 * u, 0.04 * u, 0], [0.09 * u, 0.22 * u, 0.13 * u]), pos, rot), c.belly, 3 / S);
+        }
+        return sc;
+      }, 0.05 * u, 0.2 * u);
+    });
+
+    /* 여기까지 예외 없이 왔으면 붙인다 (중간에 실패하면 하나도 안 붙는다) */
+    for (const p of out) {
+      const m = new T.Mesh(p.g, sm);
+      m.castShadow = true; m.receiveShadow = true;
+      m.userData.occ = p.occ;
+      if (p.headSurf) m.userData.headSurf = true;
+      p.joint.add(m);
+    }
+  }
+
+  /**
+   * 표면 붓질 튜브: 점 열(pts)을 따라 굵기가 변하는 납작한 관을 만든다.
+   * 단면은 표면 법선(nrm) 방향으로 flat 배 납작해서 표면에 '칠한 듯' 붙는다.
+   * rad(t) 는 0~1 구간의 반지름. 양 끝은 둥글게 닫는다.
+   */
+  function strokeGeo(pts, nrm, rad, flat, NR) {
+    const NT = pts.length - 1;
+    const pos = [], idx = [];
+    for (let i = 0; i <= NT; i++) {
+      const t = i / NT;
+      const tg = pts[Math.min(NT, i + 1)].clone().sub(pts[Math.max(0, i - 1)]).normalize();
+      const bn = new T.Vector3().crossVectors(tg, nrm[i]).normalize();
+      const nn = new T.Vector3().crossVectors(bn, tg).normalize();
+      const cap = Math.sqrt(Math.min(1, t / 0.12)) * Math.sqrt(Math.min(1, (1 - t) / 0.12));
+      const r = rad(t) * cap + 0.01;
+      for (let k = 0; k < NR; k++) {
+        const a = k / NR * Math.PI * 2;
+        const q = pts[i].clone()
+          .addScaledVector(nn, Math.cos(a) * r * flat)
+          .addScaledVector(bn, Math.sin(a) * r);
+        pos.push(q.x, q.y, q.z);
+      }
+    }
+    for (let i = 0; i < NT; i++) for (let k = 0; k < NR; k++) {
+      const a = i * NR + k, b = i * NR + (k + 1) % NR, cc = (i + 1) * NR + k, d = (i + 1) * NR + (k + 1) % NR;
+      idx.push(a, cc, b, b, cc, d);
+    }
+    const gg = new T.BufferGeometry();
+    gg.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+    gg.setAttribute('uv', new T.Float32BufferAttribute(new Float32Array(pos.length / 3 * 2), 2));
+    gg.setIndex(idx);
+    gg.computeVertexNormals();
+    // 감는 방향: 가운데 고리의 법선이 바깥(관 중심에서 멀어지는 쪽)을 보도록
+    const mid = Math.floor(NT / 2) * NR;
+    const n0 = new T.Vector3().fromBufferAttribute(gg.attributes.normal, mid);
+    const p0 = new T.Vector3().fromBufferAttribute(gg.attributes.position, mid).sub(pts[Math.floor(NT / 2)]);
+    if (n0.dot(p0) < 0) {
+      for (let t = 0; t < idx.length; t += 3) { const q = idx[t + 1]; idx[t + 1] = idx[t + 2]; idx[t + 2] = q; }
+      gg.setIndex(idx);
+      gg.computeVertexNormals();
+    }
+    return gg;
+  }
+
+  /** 머리 표면 탐침: headSurf 메시에 광선을 쏴서 표면 점을 찾는다 (머리 로컬) */
+  const _ray = new T.Raycaster();
+  function headProbe(headJ, u, hc) {
+    headJ.updateMatrixWorld(true);
+    const surf = [];
+    headJ.traverse(o => { if (o.isMesh && o.userData.headSurf) surf.push(o); });
+    const toW = headJ.matrixWorld, toL = headJ.matrixWorld.clone().invert();
+    const sphereX = (y, z) => {
+      const yy = (y - hc) / (u * 1.03), zz = z / (u * 0.97);
+      return u * Math.sqrt(Math.max(0.05, 1 - yy * yy - zz * zz));
+    };
+    return {
+      /** 머리 로컬 (y, z) 에서 정면(+x) 표면의 x */
+      frontX(y, z) {
+        if (surf.length) {
+          _ray.set(new T.Vector3(u * 3, y, z).applyMatrix4(toW), new T.Vector3(-1, 0, 0).transformDirection(toW));
+          const hit = _ray.intersectObjects(surf, false)[0];
+          if (hit) return hit.point.applyMatrix4(toL).x;
+        }
+        return sphereX(y, z);
+      },
+      /** 점 p 를 중심 c 에서 바깥으로 뻗는 직선 위의 표면으로 옮긴다 */
+      radial(p, c) {
+        if (surf.length) {
+          const dir = p.clone().sub(c).normalize();
+          const o = c.clone().addScaledVector(dir, u * 3);
+          _ray.set(o.applyMatrix4(toW), dir.clone().negate().transformDirection(toW));
+          const hit = _ray.intersectObjects(surf, false)[0];
+          if (hit) return hit.point.applyMatrix4(toL);
+        }
+        return p.clone();
+      }
+    };
+  }
+
+  /**
+   * 눈썹: 머리 표면을 따라 휘는 가는 붓질.
+   *
+   * 예전엔 네모난 막대를 눈 높이 앞에 띄워 선글라스처럼 보였다. 이제는
+   * 눈꺼풀 위로 올리고, 머리 표면에 광선을 쏴서 곡면을 따라 붙인다.
+   * 안쪽이 굵고 바깥으로 가늘며 양 끝은 둥글다. 관절(browJ)은 눈썹 한가운데
+   * 놓여 rig.js 가 올리고 기울일 수 있다.
+   */
+  function buildBrows(ch, headJ, spots, S, u, hc, sculpted) {
+    if (!spots.length) return;
+    const probe = headProbe(headJ, u, hc);
+    for (const sp of spots) {
+      const sd = sp.side, j = sp.node;
+      const by = j.position.y, ez = j.position.z;
+      const bx = probe.frontX(by, ez);
+      j.position.x = bx;
+      const key = 'brow:' + ch.id + ':' + sd + (sculpted ? 's' : 'p') + (LOD ? 'L' : '');
+      const g = geo(key, () => {
+        const NT = LOD ? 10 : 22;
+        const pts = [], nrm = [];
+        for (let i = 0; i <= NT; i++) {
+          const t = i / NT;
+          const z = ez - sd * 1.35 * S + sd * t * 3.3 * S;
+          const y = by + 0.42 * S * Math.sin(Math.PI * t) - 0.38 * S * t + 0.05 * S;
+          const x = probe.frontX(y, z) + 0.1 * S;
+          pts.push(new T.Vector3(x - bx, y - by, z - ez));
+          nrm.push(new T.Vector3(x + u * 0.25, y - hc, z).normalize());
+        }
+        return strokeGeo(pts, nrm, t => S * (0.44 - 0.2 * t), 0.5, LOD ? 5 : 9);
+      });
+      const m = mesh(g, sp.mat);
+      m.castShadow = false;
+      j.add(m);
+    }
+  }
+
+  /**
+   * 입: 주둥이 곡면에 얹는 가는 선. 조각으로 홈을 파면 격자보다 가늘어서
+   * 들쭉날쭉하게 깨진다. 눈썹과 같은 붓질로 그리면 해상도와 상관없이 또렷하다.
+   * 선은 머리 반지름 단위 좌표로 적고, 중심 c 에서 바깥으로 쏜 광선으로
+   * 표면에 붙인다.
+   */
+  const MOUTHS = {
+    // [중심, 선들[[점...]], 굵기]
+    koko:   [[0.62, -0.32, 0], [[[0.68, -0.40, -0.46], [0.95, -0.47, -0.36], [1.2, -0.52, -0.2], [1.36, -0.54, 0],
+                                 [1.2, -0.52, 0.2], [0.95, -0.47, 0.36], [0.68, -0.40, 0.46]]], 0.2],
+    tango:  [[0.85, -0.34, 0], [[[1.34, -0.36, 0], [1.33, -0.46, 0]],
+                                [[1.2, -0.44, -0.2], [1.3, -0.5, -0.08], [1.33, -0.47, 0], [1.3, -0.5, 0.08], [1.2, -0.44, 0.2]]], 0.15],
+    luna:   [[0.78, -0.3, 0], [[[1.1, -0.24, 0], [1.1, -0.34, 0]],
+                               [[1.0, -0.36, -0.2], [1.06, -0.41, -0.1], [1.1, -0.35, 0], [1.06, -0.41, 0.1], [1.0, -0.36, 0.2]]], 0.13],
+    momo:   [[0.76, -0.28, 0], [[[1.04, -0.19, 0], [1.04, -0.31, 0]],
+                                [[0.96, -0.33, -0.17], [1.0, -0.38, -0.08], [1.04, -0.32, 0], [1.0, -0.38, 0.08], [0.96, -0.33, 0.17]]], 0.12],
+    bumper: [[0.66, -0.4, 0], [[[0.72, -0.62, -0.52], [1.05, -0.72, -0.34], [1.4, -0.74, 0], [1.05, -0.72, 0.34], [0.72, -0.62, 0.52]]], 0.2],
+    // 부리: 윗부리와 아랫부리 사이 이음선
+    bbiyak: [[0.9, -0.36, 0], [[[0.78, -0.37, -0.27], [1.0, -0.375, -0.2], [1.2, -0.38, -0.08], [1.26, -0.385, 0],
+                                [1.2, -0.38, 0.08], [1.0, -0.375, 0.2], [0.78, -0.37, 0.27]]], 0.1],
+    magma:  [[0.4, -0.45, 0], [[[0.8, -0.44, -0.5], [0.96, -0.49, -0.24], [1.0, -0.47, 0], [0.96, -0.49, 0.24], [0.8, -0.44, 0.5]]], 0.26]
+  };
+  function buildMouth(ch, headJ, S, u, hc, m) {
+    const spec = MOUTHS[ch.id];
+    if (!spec) return;
+    const probe = headProbe(headJ, u, hc);
+    const L = (a) => new T.Vector3(a[0] * u, hc + a[1] * u, a[2] * u);
+    const C = L(spec[0]);
+    spec[1].forEach((line, li) => {
+      const g = geo('mouth:' + ch.id + ':' + li + (LOD ? 'L' : ''), () => {
+        // 제어점을 부드러운 곡선으로 잇고, 곡선 위 점마다 표면으로 붙인다
+        const curve = new T.CatmullRomCurve3(line.map(L));
+        const n = LOD ? 8 : Math.max(10, line.length * 6);
+        const pts = [], nrm = [];
+        for (let i = 0; i <= n; i++) {
+          const p = probe.radial(curve.getPoint(i / n), C);
+          const d = p.clone().sub(C).normalize();
+          pts.push(p.addScaledVector(d, 0.06 * S));
+          nrm.push(d);
+        }
+        const r0 = spec[2] * S;
+        return strokeGeo(pts, nrm, t => r0 * (0.7 + 0.3 * Math.sin(Math.PI * t)), 0.55, LOD ? 5 : 8);
+      });
+      const mm = mesh(g, m);
+      mm.castShadow = false;
+      headJ.add(mm);
+    });
   }
 
   /** 두 점을 잇는 캡슐 (꼬리·귀 등 고정 부위용) */
@@ -977,6 +1560,18 @@
     const list = [];
     root.traverse(o => {
       if (!o.isMesh || !o.geometry) return;
+      // 조각 메시는 통째 경계 구가 몸 전체만 해서 모든 걸 새까맣게 가린다.
+      // 조각에 쓰인 도형별 구를 대신 넣는다.
+      if (o.userData.occ) {
+        const sc = new T.Vector3().setFromMatrixScale(o.matrixWorld);
+        const k = Math.max(sc.x, sc.y, sc.z);
+        for (const q of o.userData.occ) {
+          const c = new T.Vector3(q.c[0], q.c[1], q.c[2]).applyMatrix4(o.matrixWorld);
+          const r = q.r * k;
+          list.push({ c, r, r2: r * r, cut: (r * 4.2) * (r * 4.2), owner: o });
+        }
+        return;
+      }
       if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
       const bs = o.geometry.boundingSphere;
       if (!bs || !(bs.radius > 0)) return;
@@ -993,6 +1588,8 @@
     const pos = gg.attributes.position, nrm = gg.attributes.normal;
     if (!pos || !nrm) return;
     const n = pos.count;
+    // 이미 정점 색이 있으면(조각: 색 + 자체 AO) 그 위에 곱한다
+    const base = gg.attributes.color ? gg.attributes.color.array : null;
     const col = new Float32Array(n * 3);
     const nMat = new T.Matrix3().getNormalMatrix(ownerMatrix);
     for (let i = 0; i < n; i++) {
@@ -1001,7 +1598,7 @@
       let occ = 0;
       for (let j = 0; j < occluders.length; j++) {
         const s = occluders[j];
-        if (s === self) continue;
+        if (s.owner === self) continue;
         _aoD.subVectors(s.c, _aoP);
         const d2 = _aoD.lengthSq();
         if (d2 > s.cut) continue;                 // 멀면 기여가 없다
@@ -1016,7 +1613,11 @@
       // 캐릭터는 겹치는 프리미티브 수십 개로 이루어져 있어 단순 합산하면
       // 모든 정점이 바닥값에 눌러붙는다. 포화 곡선으로 눌러 대비를 살린다.
       const ao = Math.max(floor, 1 - strength * (occ / (occ + 0.85)));
-      col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = ao;
+      if (base) {
+        col[i * 3] = base[i * 3] * ao; col[i * 3 + 1] = base[i * 3 + 1] * ao; col[i * 3 + 2] = base[i * 3 + 2] * ao;
+      } else {
+        col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = ao;
+      }
     }
     gg.setAttribute('color', new T.BufferAttribute(col, 3));
   }
@@ -1029,8 +1630,6 @@
     const occluders = opts.ao ? collectOccluders(root) : null;
     const aoStrength = opts.aoStrength === undefined ? 0.68 : opts.aoStrength;
     const aoFloor = opts.aoFloor === undefined ? 0.34 : opts.aoFloor;
-    const selfOf = new Map();
-    if (occluders) for (const s of occluders) selfOf.set(s.owner, s);
 
     const buckets = new Map();          // ownerNode -> Map(material -> [geometry])
     const remove = [];
@@ -1054,7 +1653,11 @@
             gg.setAttribute('uv', new T.BufferAttribute(new Float32Array(gg.attributes.position.count * 2), 2));
           }
           if (occluders) {
-            bakeAO(gg, owner.matrixWorld, occluders, selfOf.get(child), aoStrength, aoFloor);
+            // 조각 메시는 자기 AO 를 거리장으로 이미 구웠다. 다른 파츠 몫만 약하게 더한다
+            const aoK = child.userData.ao === undefined ? 1 : child.userData.ao;
+            bakeAO(gg, owner.matrixWorld, occluders, child,
+              (child.userData.occ ? aoStrength * 0.55 : aoStrength) * aoK,
+              child.userData.occ ? 0.6 : 1 - (1 - aoFloor) * aoK);
           }
           if (!buckets.has(owner)) buckets.set(owner, new Map());
           const bm = buckets.get(owner);

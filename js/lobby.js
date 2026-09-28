@@ -5,6 +5,7 @@
  * ============================================================= */
 (function (global) {
   'use strict';
+  const BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
   const D = global.GameData;
   const St = global.Stats;
@@ -132,6 +133,8 @@
       const tab = TABS[this.tab];
       const g = this.$.grid;
       g.innerHTML = '';
+      const queue = [];
+      const token = this._thumbToken = (this._thumbToken || 0) + 1;
       tab.list.forEach(item => {
         const selId = this.sel[tab.key];
         const card = document.createElement('button');
@@ -140,6 +143,7 @@
         im.className = 'thumb';
         im.width = 88; im.height = 66;
         im.alt = item.name;
+        im.src = BLANK;                    // 썸네일이 구워질 때까지 빈 칸 (깨진 이미지 아이콘 방지)
         card.appendChild(im);
         const nm = document.createElement('div');
         nm.className = 'nm'; nm.textContent = item.name;
@@ -150,13 +154,15 @@
         card.appendChild(cl);
         g.appendChild(card);
 
-        // 미니 프리뷰 (3D 스냅샷, 조합별 캐시)
+        // 미니 프리뷰 (3D 스냅샷, 조합별 캐시).
+        // 캐릭터는 처음 만들 때 조각(js/sculpt.js)을 하느라 한 명에 수백 ms 가 든다.
+        // 여덟 장을 한 번에 구우면 로비가 통째로 멈추므로 한 프레임에 한 장씩 굽는다.
         const probe = St.build(
           this.tab === 'character' ? item.id : this.sel.char,
           this.tab === 'frame' ? item.id : this.sel.frame,
           this.tab === 'wheel' ? item.id : this.sel.wheel,
           this.tab === 'glider' ? item.id : this.sel.glider);
-        im.src = global.Icons.kartThumbURL(probe, 132);
+        queue.push(() => { im.src = global.Icons.kartThumbURL(probe, 132); });
 
         card.addEventListener('mouseenter', () => { this.$.desc.textContent = item.desc || ''; });
         card.addEventListener('click', () => {
@@ -169,6 +175,13 @@
       });
       const cur = tab.list.find(i => i.id === this.sel[tab.key]);
       this.$.desc.textContent = cur ? (cur.desc || '') : '';
+      // 그리드를 다시 그리면(탭 전환 · 선택) 이전 대기열은 버린다
+      const pump = () => {
+        if (token !== this._thumbToken || !queue.length) return;
+        try { queue.shift()(); } catch (e) { /* 썸네일 하나 실패해도 나머지는 계속 */ }
+        requestAnimationFrame(pump);
+      };
+      requestAnimationFrame(pump);
     },
 
     deltaLabel(item) {
