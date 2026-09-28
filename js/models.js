@@ -488,7 +488,8 @@
         // 눈썹: 관절만 먼저 두고 모양은 머리 표면이 확정된 뒤(조각 이후)에 붙인다.
         // 예전엔 네모난 막대를 눈 높이 앞에 띄워서 선글라스처럼 보였다.
         // 이제는 눈꺼풀 위로 충분히 올리고, 머리 곡면을 따라 휘는 가는 붓질로 만든다.
-        const browJ = joint(front * 0.86, ey + eyeR * 1.42 + 0.35 * S, ez, 'brow');
+        // 모자를 쓴 삐약은 챙 밑에 보이도록 눈썹을 눈에 조금 더 붙인다
+        const browJ = joint(front * 0.86, ey + eyeR * (ch.id === 'bbiyak' ? 1.2 : 1.42) + 0.35 * S, ez, 'brow');
         browJ.userData.joint = true;
         headJ.add(browJ);
         browSpots.push({ node: browJ, side: sd, mat: browMat });
@@ -511,22 +512,29 @@
         const lensMat = mat('#45d9d3', { rough: 0.08, metal: 0.2, envI: 2.1, coat: 1, coatRough: 0.04,
           emissive: '#0b5b68', emissiveIntensity: 0.45 });
         const goggleMat = mat('#182231', { rough: 0.22, metal: 0.7, envI: 1.35 });
-        const cap = sphere(headR * 0.98, capMat, -headR * 0.08, H(headR * 0.74), 0, 14);
+        // 모자는 눈썹이 챙 밑으로 보이도록 살짝 높여 얹는다 (콘셉트 아트 비율)
+        const cap = sphere(headR * 0.98, capMat, -headR * 0.08, H(headR * 0.86), 0, 14);
         cap.scale.set(1.02, 0.58, 1.0); headJ.add(cap);
         const capPeak = rounded(4.4 * S, 1.15 * S, 2.7 * S, 0.42 * S, capMat);
-        capPeak.position.set(front * 0.5, H(headR * 0.58), 0); capPeak.rotation.x = Math.PI / 2; headJ.add(capPeak);
+        capPeak.position.set(front * 0.52, H(headR * 0.72), 0); capPeak.rotation.x = Math.PI / 2; headJ.add(capPeak);
+        // 고글은 콘셉트 아트처럼 모자 앞에 걸쳐 올려 둔다. 눈 위에 씌우면
+        // 눈·눈꺼풀·눈썹이 렌즈 뒤에 묻혀 표정 시스템이 안 보인다.
+        const gog = new T.Object3D();
+        gog.position.set(headR * 0.76, H(headR * 1.0), 0);
+        gog.rotation.z = 0.5;                       // 렌즈가 앞·위를 보게 젖힌다
+        headJ.add(gog);
         [-1, 1].forEach(sd => {
-          const ring = torus(2.18 * S, 0.34 * S, goggleMat, front * 0.78, H(headR * 0.11), sd * headR * 0.38);
-          ring.rotation.y = Math.PI / 2; headJ.add(ring);
-          const lens = sphere(1.86 * S, lensMat, front * 0.84, H(headR * 0.11), sd * headR * 0.38, 14);
-          lens.scale.set(0.22, 0.88, 1.0); lens.castShadow = false; headJ.add(lens);
-          const shine = sphere(0.34 * S, white, front * 1.04, H(headR * 0.40), sd * headR * 0.50, 8);
-          shine.scale.set(0.16, 0.46, 0.22); shine.castShadow = false; headJ.add(shine);
+          const ring = torus(1.5 * S, 0.3 * S, goggleMat, 0, 0, sd * headR * 0.36);
+          ring.rotation.y = Math.PI / 2; gog.add(ring);
+          const lens = sphere(1.36 * S, lensMat, 0.12 * S, 0, sd * headR * 0.36, 14);
+          lens.scale.set(0.3, 1, 1); lens.castShadow = false; gog.add(lens);
+          const shine = sphere(0.3 * S, white, 0.5 * S, 0.55 * S, sd * headR * 0.36 - 0.45 * S, 8);
+          shine.scale.set(0.3, 0.6, 0.4); shine.castShadow = false; gog.add(shine);
         });
-        headJ.add(box(1.15 * S, 0.48 * S, headR * 0.34, goggleMat, front * 0.82, H(headR * 0.11), 0));
-        const strap = mesh(geo('bbiyakGoggleStrap', () =>
-          new T.CylinderGeometry(headR * 0.96, headR * 0.96, 0.48 * S, 28, 1, true, Math.PI / 2 + 0.62, Math.PI * 2 - 1.24)), gearMats().strap);
-        strap.position.y = H(headR * 0.11); headJ.add(strap);
+        gog.add(box(0.8 * S, 0.45 * S, headR * 0.3, goggleMat, 0, 0, 0));
+        const strap = mesh(geo('bbiyakGoggleStrap2', () =>
+          new T.CylinderGeometry(headR * 1.03, headR * 1.03, 0.5 * S, 28, 1, true, Math.PI / 2 + 0.5, Math.PI * 2 - 1.0)), gearMats().strap);
+        strap.position.set(-headR * 0.08, H(headR * 0.9), 0); headJ.add(strap);
         // 가슴의 파일럿 하네스와 버튼은 근접 카메라에서의 읽힘을 높인다.
         const harness = mat('#243452', { rough: 0.4, metal: 0.25, envI: 1.0 });
         torso.add(
