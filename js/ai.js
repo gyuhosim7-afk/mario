@@ -97,6 +97,27 @@
         }
       }
 
+      // 건초더미: 굴러오는 더미가 앞 도로에서 내 진행선으로 다가오면 속도를 풀어
+      // 먼저 지나가게 둔다. 실력이 낮은 CPU 는 그냥 들이받는다 (그래야 변수가 된다).
+      const bales = world && world.track && world.track.bales;
+      if (bales && bales.length && this.skill > 0.45) {
+        const c = Math.cos(k.angle), s = Math.sin(k.angle);
+        for (const b of bales) {
+          if (!b.rolling) continue;
+          const dx = b.x - k.x, dy = b.y - k.y;
+          const fwd = c * dx + s * dy;
+          if (fwd < 0 || fwd > 280) continue;
+          const side = -s * dx + c * dy;
+          // 더미의 굴러가는 방향을 내 좌우축에 투영: 부호가 side 와 반대면 다가오는 중
+          const vSide = (b.nx * -s + b.ny * c) * b.dir;
+          const coming = vSide * side < 0;
+          if (Math.abs(side) < 60 || (coming && Math.abs(side) < 220)) {
+            k.input.throttle = 0;
+            k.input.brake = fwd < 150 && k.speed > 160;
+          }
+        }
+      }
+
       // 아이템 사용
       this._itemT -= dt;
       if (k.item && this._itemT <= 0) {

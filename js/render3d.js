@@ -743,6 +743,28 @@
         return n;
       });
 
+      /* --- 초원 기믹: 건초더미 · 회오리 · 풍차 --- */
+      // 건초더미와 풍차는 도는 관절(roller / blades) 안쪽만 병합한다
+      this.baleNodes = (track.bales || []).map(() => {
+        const n = global.Models.optimize(global.Models.buildProp('hay'));
+        g.add(n);
+        return n;
+      });
+      this.whirlNodes = (track.whirls || []).map(() => {
+        const n = global.Models.buildProp('whirl');
+        g.add(n);
+        return n;
+      });
+      this.windmillNodes = (track.windmills || []).map(w => {
+        const n = global.Models.optimize(global.Models.buildProp('windmill'));
+        n.position.set(w.x, 0, w.y);
+        // 날개 면이 코스 쪽을 보게 돌린다 (+x 가 날개 앞면)
+        n.rotation.y = -Math.atan2(track.world / 2 - w.y, track.world / 2 - w.x);
+        n.scale.setScalar(1.5);
+        g.add(n);
+        return n;
+      });
+
       /* --- 도로를 가로지르는 게이트 --- */
       (track.gantrySpots || []).forEach((ni, idx) => {
         const nd = track.nodes[ni];
@@ -819,8 +841,11 @@
         const a = hash(x0, y0), b = hash(x0 + 1, y0), d = hash(x0, y0 + 1), e = hash(x0 + 1, y0 + 1);
         return (a * (1 - sx) + b * sx) * (1 - sy) + (d * (1 - sx) + e * sx) * sy;
       };
+      // 평면은 rotation.x = -90도로 눕혀 쓴다. 이때 로컬 y 는 월드 -z 로 간다.
+      // 예전엔 wz = c + y 로 계산해서 '도로 주변은 평평하게' 가 거울에 비친
+      // 트랙 기준으로 적용됐고, 실제 도로 곳곳을 언덕이 덮어 길이 끊겨 보였다.
       for (let i = 0; i < pos.count; i++) {
-        const wx = c + pos.getX(i), wz = c + pos.getY(i);
+        const wx = c + pos.getX(i), wz = c - pos.getY(i);
         let d;
         if (wx < -bound || wx > bound || wz < -bound || wz > bound) d = 99999;
         else d = track.project(wx, wz).dist;
@@ -836,7 +861,7 @@
       // 동시에 풀밭에 밝고 어두운 기복이 생겨 원경이 밋밋하지 않다.
       const col = new Float32Array(pos.count * 3);
       for (let i = 0; i < pos.count; i++) {
-        const wx = c + pos.getX(i), wz = c + pos.getY(i);
+        const wx = c + pos.getX(i), wz = c - pos.getY(i);
         const m = vnoise(wx, wz, 1700) * 0.46 + vnoise(wx, wz, 640) * 0.27
                 + vnoise(wx, wz, 300) * 0.17 + vnoise(wx, wz, 150) * 0.10;
         const v = 0.76 + m * 0.48;                       // 0.76 ~ 1.24
@@ -1196,6 +1221,49 @@
           n.rotation.z = t.shake * Math.sin(this.time * 46) * 0.09;
           n.rotation.x = t.shake * Math.sin(this.time * 37 + 1.1) * 0.06;
         });
+      }
+
+      // 건초더미: 도로 방향 축으로 굴러간다
+      if (this.baleNodes && this.baleNodes.length) {
+        this.track.bales.forEach((b, i) => {
+          const n = this.baleNodes[i];
+          n.position.set(b.x, b.r, b.y);
+          n.rotation.y = -Math.atan2(b.ty, b.tx);
+          // 로컬 +z 가 트랙 법선과 같은 쪽인지에 따라 굴림 방향 부호가 바뀐다
+          const sg = Math.sign(-b.ty * b.nx + b.tx * b.ny) || 1;
+          n.userData.roller.rotation.x = b.roll * sg;
+        });
+      }
+      // 회오리: 통째로 돌고, 고리마다 위상을 어긋나게 흔들어 꼬인 깔때기로
+      if (this.whirlNodes && this.whirlNodes.length) {
+        this.track.whirls.forEach((w, i) => {
+          const n = this.whirlNodes[i];
+          n.position.set(w.x, 0, w.y);
+          n.rotation.y = -w.spin;
+          const rings = n.userData.rings;
+          for (let j = 0; j < rings.length; j++) {
+            const rg = rings[j];
+            rg.position.x = Math.sin(w.phase * 2.3 + j * 0.55) * j * 1.6;
+            rg.position.z = Math.cos(w.phase * 1.9 + j * 0.5) * j * 1.2;
+            rg.position.y = rg.userData.baseY + Math.sin(w.phase * 4 + j) * 2;
+          }
+          // 깔때기 두 겹을 서로 다른 속도로 돌리고 줄무늬를 위로 흘린다
+          n.userData.funnels.forEach((f, j) => {
+            f.rotation.y = -w.spin * (j ? 0.6 : 0.35);
+            f.material.map.offset.y = -w.phase * (0.5 + j * 0.3);
+          });
+          for (const lf of n.userData.leaves) {
+            const o = lf.userData.orbit;
+            const a = w.phase * o.sp + o.ph;
+            const h = (o.h + w.phase * 40 * (o.sp / 3)) % 120;
+            const r = o.r + h * 0.35;
+            lf.position.set(Math.cos(a) * r, 6 + h, Math.sin(a) * r);
+            lf.rotation.set(a * 1.3, a, a * 0.7);
+          }
+        });
+      }
+      if (this.windmillNodes) {
+        for (const n of this.windmillNodes) n.userData.blades.rotation.x += dt * 0.9;
       }
 
       // 배경물 부유 / 회전

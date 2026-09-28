@@ -181,7 +181,7 @@
       width: 168,
       theme: 'circuit',
       heading: 0,
-      desc: '메인 스트레이트 끝의 고속 1코너, 최저속 헤어핀, 에스자와 시케인이 이어지는 정통 그랑프리 서킷. 잔디 오프로드라 실수해도 복귀할 수 있다.',
+      desc: '풍차가 도는 초원 서킷. 직선마다 거대한 건초더미가 도로를 가로질러 굴러오고, 코스를 떠도는 회오리바람에 올라타면 하늘로 솟구친다 — 공중에서 트릭을 넣으면 착지 부스터.',
       sky: ['#63b7f0', '#bfe6ff'],
       fog: '#e2ecef',
       offroadName: '잔디',
@@ -202,7 +202,7 @@
       boostCount: 4,
       boxRows: 5,
       shoulder: 0,
-      hazard: null
+      hazard: 'meadow'
     },
     {
       id: 'rainbow',

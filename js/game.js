@@ -123,6 +123,7 @@
       }
 
       this.track.updateThwomps(dt);
+      if (this.track.bales.length || this.track.whirls.length) this.track.updateMeadow(dt);
 
       /* ---- AI ---- */
       if (this.state !== 'COUNTDOWN') {
@@ -185,6 +186,7 @@
       // 기록이 몇 초씩 흔들리면 고스트와 비교하는 의미가 없다.
       if (!this.timeAttack) this._itemBoxes(dt);
       this._thwompHits();
+      this._meadowHits(dt);
       this._updateHazards(dt);
       this._updateStandings();
 
@@ -357,6 +359,59 @@
           if (d < 40) {
             this.hitKart(k, 'knock', k.x - t.x, k.y - t.y, 0.8, null);
             this.renderer.camera.shake = Math.max(this.renderer.camera.shake, 0.8);
+          }
+        }
+      }
+    }
+
+    /**
+     * 초원 기믹.
+     *
+     * 건초더미: 굴러오는 중일 때만 맞는다 (멈춰 쉬는 더미는 풀밭 끝에 있어 도로
+     *   밖이다). 무겁지만 부드러운 짚이라 폭발 넉백이 아니라 스핀아웃이다.
+     *   공중에 뜬 카트는 위로 지나간다.
+     * 회오리: 닿으면 높이 띄운다. 한 번 띄운 카트는 잠깐 다시 안 띄운다
+     *   (착지하자마자 같은 회오리에 또 걸려 무한히 튀는 것 방지).
+     */
+    _meadowHits(dt) {
+      const tr = this.track;
+      if (!tr.bales.length && !tr.whirls.length) return;
+      for (const b of tr.bales) {
+        if (!b.rolling) continue;
+        for (const k of this.karts) {
+          if (k.invincible || k.airborne || k.finished) continue;
+          const d = Math.hypot(k.x - b.x, k.y - b.y);
+          if (d < b.r + 20) {
+            if (this.hitKart(k, 'spin', k.x - b.x, k.y - b.y, 0.6, null)) {
+              // 굴러가는 방향으로 밀어낸다
+              k.vlat += (b.nx * -Math.sin(k.angle) + b.ny * Math.cos(k.angle)) * b.dir * 140;
+              if (k.isPlayer) this.hud.showToast('건초더미에 치였다!', '#ffd27a');
+              for (let i = 0; i < 16; i++) {
+                this.renderer.spawn(b.x, b.y, 18 + Math.random() * 20, (Math.random() - 0.5) * 220,
+                  (Math.random() - 0.5) * 220, 60 + Math.random() * 160, 0.9, i % 2 ? '#e8c35a' : '#c89a3a', 4, 'dot');
+              }
+            }
+          }
+        }
+      }
+      for (const k of this.karts) if (k._whirlCool > 0) k._whirlCool -= dt;
+      for (const w of tr.whirls) {
+        for (const k of this.karts) {
+          if (k._whirlCool > 0) continue;
+          if (k.airborne || k.finished || !k.controllable) continue;
+          const d = Math.hypot(k.x - w.x, k.y - w.y);
+          if (d < 38) {
+            k.launch(560);
+            k._whirlCool = 2.5;
+            if (k.isPlayer) {
+              this.hud.showToast('회오리! 공중에서 드리프트 키 = 트릭', '#bff7ff');
+              global.SFX.sfx('boost');
+            }
+            for (let i = 0; i < 18; i++) {
+              const a = Math.random() * Math.PI * 2;
+              this.renderer.spawn(k.x, k.y, 6, Math.cos(a) * 200, Math.sin(a) * 200, 120 + Math.random() * 220,
+                0.8, i % 3 ? '#9ad86a' : '#e8f6ff', 4, 'dot');
+            }
           }
         }
       }

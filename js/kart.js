@@ -461,6 +461,23 @@
     }
 
     /**
+     * 바깥 힘으로 띄운다 (회오리바람). 점프대와 같은 비행·착지 경로를 타므로
+     * 공중 트릭 → 착지 부스터 규칙도 그대로 적용된다.
+     */
+    launch(vz) {
+      if (this.airborne || this.finished) return false;
+      this.airborne = true;
+      this.airT = 0;
+      this.trick = false;
+      this.vz = vz;
+      this.z = Math.max(this.z, 6);
+      this._cancelDrift();
+      this.hopT = 0;
+      this.jumpJustNow = true;
+      return true;
+    }
+
+    /**
      * 공중 비행.
      *
      * 조향은 자세 제어 수준으로만 남긴다. 공중에서 평소처럼 돌아가면 점프대가

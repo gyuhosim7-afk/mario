@@ -78,6 +78,18 @@
        [Math.max(ax, b[0]) + R, Math.max(ay, b[1]) + R, Math.max(az, b[2]) + R]);
   }
 
+  /** 모서리가 둥근 상자 (iq sdRoundBox). half = 반쪽 크기, r = 모서리 반지름 */
+  function roundBox(c, half, r) {
+    const [cx, cy, cz] = c;
+    const bx = half[0] - r, by = half[1] - r, bz = half[2] - r;
+    return prim((x, y, z) => {
+      const qx = Math.abs(x - cx) - bx, qy = Math.abs(y - cy) - by, qz = Math.abs(z - cz) - bz;
+      const mx = qx > 0 ? qx : 0, my = qy > 0 ? qy : 0, mz = qz > 0 ? qz : 0;
+      const inside = Math.max(qx, qy, qz);
+      return Math.sqrt(mx * mx + my * my + mz * mz) + (inside < 0 ? inside : 0) - r;
+    }, [cx - half[0], cy - half[1], cz - half[2]], [cx + half[0], cy + half[1], cz + half[2]]);
+  }
+
   /** 반지름이 같은 캡슐 */
   function capsule(a, b, r) { return roundCone(a, b, r, r * 0.9999); }
 
@@ -387,5 +399,5 @@
 
   function clear() { for (const k in cache) delete cache[k]; }
 
-  global.Sculpt = { sphere, ellipsoid, roundCone, capsule, chain, xform, Scene, mesh, march, cached, smin, stats, clear };
+  global.Sculpt = { sphere, ellipsoid, roundCone, roundBox, capsule, chain, xform, Scene, mesh, march, cached, smin, stats, clear };
 })(window);

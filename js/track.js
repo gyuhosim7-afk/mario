@@ -381,6 +381,12 @@
         });
       }
 
+      // 에메랄드 서킷: 굴러오는 건초더미 · 떠도는 회오리바람 · 풍차
+      this.bales = [];
+      this.whirls = [];
+      this.windmills = [];
+      if (this.def.hazard === 'meadow') this._buildMeadow();
+
       // 스타트 그리드
       this.startSlots = [];
       for (let i = 0; i < 8; i++) {
@@ -388,6 +394,98 @@
         const side = (i % 2 ? 1 : -1) * this.width * 0.22;
         const nd = this.projectAlong(-back);
         this.startSlots.push({ x: nd.x + nd.nx * side, y: nd.y + nd.ny * side, angle: Math.atan2(nd.dy, nd.dx) });
+      }
+    }
+
+    /**
+     * 초원 기믹 배치.
+     *
+     * 건초더미: 직선 구간 세 곳에서 도로를 가로질러 굴러간다. 한쪽 풀밭에서
+     *   출발해 반대편 풀밭까지 가고, 잠깐 쉬었다가 되돌아온다. 궤적이 도로와
+     *   수직이라 멀리서도 '언제 지나갈지' 읽힌다 — 속도를 늦추거나 뒤로
+     *   빠지는 판단 싸움이 생긴다. 스타트 직선은 비운다(출발 직후 사고 방지).
+     * 회오리: 코스를 따라 카트보다 느리게 떠돈다. 닿으면 공중으로 높이
+     *   띄워진다. 벌칙이 아니라 기회다 — 공중에서 트릭을 넣으면 점프대처럼
+     *   착지 부스터가 붙는다. 좌우로 흔들리며 다녀서 노리고 들어가야 한다.
+     */
+    _buildMeadow() {
+      const N = this.nodes.length;
+      const spots = [];
+      // 점프대 · 아이템 박스 줄 · 부스트 발판 · 게이트와 겹치면 안 된다
+      const busy = this.ramps.map(r => r.i).concat(this.boxSpots, this.boostSpots, this.gantrySpots || []);
+      const near = (i, frac) => busy.some(b => { const d = Math.abs(i - b); return Math.min(d, N - d) < N * frac; });
+      for (const f of [0.3, 0.55, 0.8]) {
+        const base = Math.round(f * N);
+        let best = base, bs = Infinity;
+        for (let k = -Math.round(N * 0.07); k <= Math.round(N * 0.07); k++) {
+          const i = (base + k + N) % N;
+          if (near(i, 0.025)) continue;
+          if (this._straightScore[i] < bs) { bs = this._straightScore[i]; best = i; }
+        }
+        spots.push(best);
+      }
+      const reach = this.width * 0.5 + 110;       // 풀밭 끝에서 끝까지
+      spots.forEach((i, k) => {
+        const nd = this.nodes[i];
+        this.bales.push({
+          x: nd.x, y: nd.y, cx: nd.x, cy: nd.y, nx: nd.nx, ny: nd.ny,
+          tx: nd.dx, ty: nd.dy, reach, r: 24,
+          u: -reach, dir: 1, wait: 0.6 + k * 1.3, roll: 0, rolling: false
+        });
+      });
+      for (let i = 0; i < 2; i++) {
+        this.whirls.push({ t: 0.18 + i * 0.5, lat: 0, x: 0, y: 0, phase: i * 2.1, spin: 0 });
+      }
+      this.updateMeadow(0);
+      // 풍차: 코스 바깥 풀밭, 날개는 렌더러가 돌린다
+      for (let i = 0; i < 5; i++) {
+        const nd = this.nodeAtT((i + 0.15) / 5);
+        // 코스가 휘감아 돌아오는 곳이면 반대편 도로 위에 설 수 있다. 양쪽·여러 거리를
+        // 시험해서 모든 도로에서 충분히 떨어진 자리를 고른다.
+        for (const side of (i % 2 ? [1, -1] : [-1, 1])) {
+          let placed = false;
+          for (const extra of [420, 560, 700]) {
+            const off = (this.width * 0.5 + extra) * side;
+            const x = nd.x + nd.nx * off, y = nd.y + nd.ny * off;
+            if (x < 200 || y < 200 || x > this.world - 200 || y > this.world - 200) continue;
+            if (this.project(x, y).dist < this.width * 0.5 + 300) continue;
+            this.windmills.push({ x, y, phase: i * 1.3 });
+            placed = true;
+            break;
+          }
+          if (placed) break;
+        }
+      }
+    }
+
+    updateMeadow(dt) {
+      const BALE_V = 150;                          // 굴러가는 속도 (카트 최고속의 1/3 남짓)
+      for (const b of this.bales) {
+        if (b.wait > 0) {
+          b.wait -= dt;
+          b.rolling = false;
+        } else {
+          b.rolling = true;
+          b.u += b.dir * BALE_V * dt;
+          b.roll += b.dir * BALE_V * dt / b.r;
+          if (Math.abs(b.u) >= b.reach) {
+            b.u = Math.sign(b.u) * b.reach;
+            b.dir = -b.dir;
+            b.wait = 1.6;
+          }
+        }
+        b.x = b.cx + b.nx * b.u;
+        b.y = b.cy + b.ny * b.u;
+      }
+      for (const w of this.whirls) {
+        w.phase += dt;
+        // 코스 길이와 무관하게 초속 70 정도로 앞으로 흘러간다
+        w.t = (w.t + dt * 70 / this.length) % 1;
+        w.lat = Math.sin(w.phase * 0.7) * this.width * 0.3;
+        w.spin += dt * 7;
+        const nd = this.nodeAtT(w.t);
+        w.x = nd.x + nd.nx * w.lat;
+        w.y = nd.y + nd.ny * w.lat;
       }
     }
 

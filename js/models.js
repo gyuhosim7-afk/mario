@@ -1398,23 +1398,27 @@
       SDK.detail(darkMat, { scale: 1.6, rough: 0.18, tint: 0.035 });
     }
 
-    /* 섀시 */
-    const chassis = rounded(L, W, 7.5, 6, bodyMat);
-    chassis.position.y = wr + 1.2;
-    g.add(chassis);
-
-    // 사이드 포드
-    [-1, 1].forEach(side => {
-      const pod = rounded(L * 0.56, W * 0.22, 8.5, 3.2, bodyMat);
-      pod.position.set(-L * 0.04, wr + 4.4, side * W * 0.42);
-      g.add(pod);
-    });
-
-    // 노즈콘
-    const nose = cone(W * 0.34, L * 0.30, bodyMat, L * 0.52, wr + 2.4, 0, 14);
-    nose.rotation.z = -Math.PI / 2;
-    nose.scale.set(1, 1, 0.72);
-    g.add(nose);
+    /* 차체 껍데기: 섀시 + 사이드 포드 + 노즈 + 옆 줄무늬.
+     * 조각(js/sculpt.js)으로 한 덩어리 매끈한 차체를 만든다. 상자 셋과 원뿔
+     * 하나를 겹쳐 두면 이음매마다 각이 지고 틈이 보였다. 조각이 없으면
+     * 예전 도형 조립으로 돌아간다. */
+    const shell = kartShell(L, W, wr, bodyColor, ch.colors.trim || '#f4d03f');
+    if (shell) {
+      g.add(shell);
+    } else {
+      const chassis = rounded(L, W, 7.5, 6, bodyMat);
+      chassis.position.y = wr + 1.2;
+      g.add(chassis);
+      [-1, 1].forEach(side => {
+        const pod = rounded(L * 0.56, W * 0.22, 8.5, 3.2, bodyMat);
+        pod.position.set(-L * 0.04, wr + 4.4, side * W * 0.42);
+        g.add(pod);
+      });
+      const nose = cone(W * 0.34, L * 0.30, bodyMat, L * 0.52, wr + 2.4, 0, 14);
+      nose.rotation.z = -Math.PI / 2;
+      nose.scale.set(1, 1, 0.72);
+      g.add(nose);
+    }
 
     // 프론트 범퍼 + 스플리터 + 헤드라이트
     const bumper = rounded(5, W * 0.86, 4.5, 2, darkMat);
@@ -1430,8 +1434,8 @@
       lamp.castShadow = false;
       g.add(lamp);
     });
-    // 사이드 스트라이프
-    [-1, 1].forEach(side => {
+    // 사이드 스트라이프 (조각 차체는 줄무늬를 표면에 칠해서 갖고 있다)
+    if (!shell) [-1, 1].forEach(side => {
       const stripe = rounded(L * 0.5, 3.2, 1.2, 1, accentMat);
       stripe.position.set(-L * 0.02, wr + 3.0, side * (W * 0.52 + 0.6));
       stripe.rotation.x = Math.PI / 2;
@@ -1574,6 +1578,59 @@
       optimize(g, { ao: true });
     }
     return g;
+  }
+
+  /**
+   * 조각 차체 껍데기 (카트 로컬: +x 정면, y 위, z 좌우).
+   *
+   *   섀시     바닥판 둥근 상자
+   *   사이드 포드  좌우 둥근 상자, 섀시와 부드럽게 이어 붙인다 (k=4)
+   *   노즈     앞으로 뻗은 납작한 타원체, 섀시와 크게 섞어 콧등이 흐른다
+   *   리어 카울  시트 뒤를 감싸는 낮은 둔덕
+   *   줄무늬   포드 옆면·노즈 윗면에 트림색을 칠한다 (모양은 그대로)
+   *
+   * 색은 정점 색으로 들어가므로 재질은 흰색 도색(클리어코트)이다.
+   * 캐릭터·프레임마다 색이 달라서 캐시 키에 색을 넣는다.
+   */
+  function kartShell(L, W, wr, bodyColor, stripeColor) {
+    const SC = global.Sculpt;
+    if (!SC) return null;
+    let ent;
+    try {
+      const key = 'kart:' + [L, W, wr, bodyColor, stripeColor].join(':') + (LOD ? ':L' : '');
+      ent = SC.cached(key, () => {
+        const sc = new SC.Scene();
+        const y0 = wr + 1.2;
+        sc.add(SC.roundBox([0, y0, 0], [L / 2, 3.75, W / 2], 3.4), 0, bodyColor, 2);
+        [-1, 1].forEach(sd => {
+          sc.add(SC.roundBox([-L * 0.04, wr + 4.4, sd * W * 0.42], [L * 0.28, 4.25, W * 0.11], 3.4), 4, bodyColor, 2);
+          // 줄무늬: 포드 바깥 옆면을 따라
+          sc.paint(SC.roundBox([-L * 0.02, wr + 3.4, sd * W * 0.54], [L * 0.26, 1.35, 3.2], 1), stripeColor, 1.6);
+        });
+        sc.add(SC.ellipsoid([L * 0.43, wr + 2.9, 0], [L * 0.25, 4.4, W * 0.25]), 5, bodyColor, 2);
+        sc.add(SC.ellipsoid([-L * 0.3, wr + 4.8, 0], [L * 0.14, 3.2, W * 0.3]), 4, bodyColor, 2);
+        // 노즈 윗면 가운데 줄
+        sc.paint(SC.roundBox([L * 0.43, wr + 7.5, 0], [L * 0.2, 3.5, W * 0.045], 1), stripeColor, 1.6);
+        // 차체는 큰 곡면뿐이라 격자가 성겨도 (법선이 거리장 기울기라) 매끈하다
+        const geo = SC.mesh(sc, { cell: 1.15 * (LOD ? 2.0 : 1), ao: 3 });
+        return { g: geo, occ: sc.occluders() };
+      });
+    } catch (e) {
+      console.warn('[sculpt] 카트 차체 조각 실패, 도형 차체로 대체', e);
+      return null;
+    }
+    const m = new T.MeshPhysicalMaterial({
+      color: 0xffffff, roughness: 0.38, metalness: 0.04,
+      clearcoat: 1, clearcoatRoughness: 0.06, envMapIntensity: 1.25, vertexColors: true
+    });
+    if (global.Surface) {
+      global.Surface.register(m);
+      global.Surface.detail(m, { scale: 0.9, rough: 0.10, tint: 0.022 });
+    }
+    const shell = new T.Mesh(ent.g, m);
+    shell.castShadow = true; shell.receiveShadow = true;
+    shell.userData.occ = ent.occ;
+    return shell;
   }
 
   /** 원경용 저폴리 카트. 분할 수를 절반으로 줄이고 통째로 병합한다. */
@@ -2031,6 +2088,138 @@
         for (let i = 0; i < 4; i++) {
           const a = i / 4 * Math.PI * 2;
           g.add(cone(3.4, 7, mat('#39465a', { rough: 0.8 }), -24, Math.cos(a) * 16, Math.sin(a) * 16, 6));
+        }
+        break;
+      }
+      case 'hay': {
+        // 둥근 건초 뭉치. 축(+x)은 도로 방향, 도로를 가로질러 굴러간다.
+        // roller 관절만 돌리면 되도록 모든 메시를 그 안에 넣는다.
+        const roller = joint(0, 0, 0, 'roller');
+        g.add(roller);
+        g.userData.roller = roller;
+        const R0 = 24, LEN = 34;
+        const straw = mat('#e3b94c', { rough: 0.95, envI: 0.6 });
+        const strawD = mat('#c4922e', { rough: 0.95, envI: 0.5 });
+        const twine = mat('#8a3b22', { rough: 0.8 });
+        if (global.Surface) global.Surface.detail(straw, { scale: 3.2, rough: 0.3, tint: 0.12 });
+        const body = mesh(geo('hayBody', () => {
+          const gg = new T.CylinderGeometry(R0, R0, LEN, 28, 3);
+          gg.rotateZ(Math.PI / 2);
+          return gg;
+        }), straw);
+        roller.add(body);
+        // 양쪽 단면의 말린 결 (동심 고리) + 가운데 볼록
+        [-1, 1].forEach(sd => {
+          [7, 13.5, 19.5].forEach(r => {
+            const ring = torus(r, 1.1, strawD, sd * (LEN / 2 + 0.2), 0, 0);
+            ring.rotation.y = Math.PI / 2; roller.add(ring);
+          });
+          const hub = sphere(5, strawD, sd * (LEN / 2 - 1.5), 0, 0, 10);
+          hub.scale.set(0.5, 1, 1); roller.add(hub);
+        });
+        // 묶은 끈 두 줄
+        [-8, 8].forEach(x => {
+          const band = torus(R0 + 0.3, 0.9, twine, x, 0, 0);
+          band.rotation.y = Math.PI / 2; roller.add(band);
+        });
+        // 삐져나온 짚 몇 가닥 (실루엣이 매끈한 원통으로 보이지 않게)
+        for (let i = 0; i < 14; i++) {
+          const a = i / 14 * Math.PI * 2 + (i % 3) * 0.2;
+          const x = (i % 5 - 2) * 6.5;
+          const tuft = cone(1.3, 7, straw, x, Math.cos(a) * (R0 + 1.5), Math.sin(a) * (R0 + 1.5), 4);
+          tuft.rotation.x = a;
+          roller.add(tuft);
+        }
+        break;
+      }
+      case 'whirl': {
+        // 회오리: 위로 갈수록 넓어지는 반투명 고리 기둥 + 휘말려 도는 풀잎.
+        // 렌더러가 고리를 따로 흔들어 꼬인 깔때기처럼 보이게 한다.
+        const rings = [], leaves = [];
+        const ringM = new T.MeshBasicMaterial({ color: 0xeaf8ff, transparent: true, opacity: 0.32,
+          depthWrite: false, side: T.DoubleSide });
+        const ringM2 = new T.MeshBasicMaterial({ color: 0xcfe9d8, transparent: true, opacity: 0.22,
+          depthWrite: false, side: T.DoubleSide });
+        for (let i = 0; i < 9; i++) {
+          const r = 9 + i * 4.2 + i * i * 0.55;
+          const rg = new T.Mesh(geo('whirlR' + i, () => new T.TorusGeometry(r, 1.4 + i * 0.35, 6, 28)), i % 2 ? ringM2 : ringM);
+          rg.rotation.x = Math.PI / 2;
+          rg.position.y = 5 + i * 15;
+          rg.userData.baseY = rg.position.y;
+          g.add(rg); rings.push(rg);
+        }
+        const dust = new T.Mesh(geo('whirlDust', () => new T.TorusGeometry(26, 7, 6, 24)),
+          new T.MeshBasicMaterial({ color: 0xb9a57a, transparent: true, opacity: 0.28, depthWrite: false }));
+        dust.rotation.x = Math.PI / 2; dust.position.y = 3; dust.scale.z = 0.35;
+        g.add(dust);
+        const leafM = [mat('#5fae3c', { rough: 0.8, side: T.DoubleSide }), mat('#9ad86a', { rough: 0.8, side: T.DoubleSide })];
+        for (let i = 0; i < 12; i++) {
+          const lf = new T.Mesh(geo('whirlLeaf', () => new T.PlaneGeometry(4.5, 2.4)), leafM[i % 2]);
+          lf.userData.orbit = { r: 10 + (i % 4) * 11, h: 8 + (i * 11) % 110, sp: 2.4 + (i % 3) * 0.9, ph: i * 0.9 };
+          g.add(lf); leaves.push(lf);
+        }
+        // 깔때기: 사선 줄무늬를 그린 반투명 회전체 두 겹. 고리만 있으면 멀리서
+        // 거의 안 보여서, 바람이 휘감아 오르는 면을 만든다.
+        const streak = geo('whirlTex', () => {
+          const cv = document.createElement('canvas');
+          cv.width = 256; cv.height = 256;
+          const x = cv.getContext('2d');
+          for (let i = 0; i < 26; i++) {
+            const a = 0.25 + ((i * 37) % 11) / 16;
+            x.strokeStyle = 'rgba(255,255,255,' + a.toFixed(2) + ')';
+            x.lineWidth = 3 + (i * 13) % 9;
+            const ox = (i * 53) % 256;
+            x.beginPath(); x.moveTo(ox - 256, 256); x.lineTo(ox + 256, 0); x.stroke();
+            x.beginPath(); x.moveTo(ox, 256); x.lineTo(ox + 512, 0); x.stroke();
+          }
+          const t = new T.CanvasTexture(cv);
+          t.wrapS = t.wrapT = T.RepeatWrapping;
+          t.colorSpace = T.SRGBColorSpace;
+          return t;
+        });
+        const funnels = [];
+        [[1, 0xe2edf2, 0.58, 2], [0.8, 0xbfe0c4, 0.5, 3]].forEach(([k, color, op, rep], fi) => {
+          const prof = [];
+          for (let j = 0; j <= 12; j++) {
+            const h = j / 12;
+            prof.push(new T.Vector2((7 + h * h * 58 + h * 10) * k, h * 138));
+          }
+          const tex = streak.clone();
+          tex.needsUpdate = true;
+          tex.repeat.set(rep, 1);
+          const fm = new T.MeshBasicMaterial({ map: tex, color, transparent: true, opacity: op,
+            depthWrite: false, side: T.DoubleSide });
+          const f = new T.Mesh(geo('whirlFunnel' + fi, () => new T.LatheGeometry(prof, 28)), fm);
+          f.renderOrder = 2;
+          g.add(f); funnels.push(f);
+        });
+        g.traverse(o => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
+        g.userData.rings = rings;
+        g.userData.leaves = leaves;
+        g.userData.funnels = funnels;
+        break;
+      }
+      case 'windmill': {
+        // 풍차: 흰 탑 + 빨간 지붕 + 네 날개. blades 관절을 렌더러가 돌린다.
+        const wall = mat('#f3eee2', { rough: 0.8 });
+        const roofM = mat('#c8433a', { rough: 0.6 });
+        const wood = mat('#7a5534', { rough: 0.9 });
+        const sail = mat('#fbf7ee', { rough: 0.85, side: T.DoubleSide });
+        g.add(cyl(11, 16, 84, wall, 0, 42, 0, 16));
+        g.add(cone(15, 26, roofM, 0, 97, 0, 16));
+        g.add(box(2, 16, 10, wood, 15.6, 12, 0));             // 문
+        [30, 56].forEach(y => g.add(box(2, 8, 7, mat('#6fa8d8', { rough: 0.2 }), 13.4 - y * 0.05, y, 0)));
+        const blades = joint(15, 86, 0, 'blades');
+        g.add(blades);
+        g.userData.blades = blades;
+        blades.add(sphere(4, wood, 2, 0, 0, 10));
+        for (let i = 0; i < 4; i++) {
+          const arm = new T.Object3D();
+          arm.rotation.x = i * Math.PI / 2;
+          blades.add(arm);
+          arm.add(box(1.6, 64, 2.2, wood, 3, 32, 0));
+          const s = box(0.8, 46, 14, sail, 3.6, 40, 8.5);
+          arm.add(s);
         }
         break;
       }
