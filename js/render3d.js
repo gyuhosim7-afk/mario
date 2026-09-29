@@ -98,6 +98,8 @@
 
   /* 매 프레임 재사용하는 임시 객체. 프레임마다 new 하면 GC 스파이크가 된다. */
   const _m4 = new T.Matrix4(), _m4b = new T.Matrix4();
+  // 유성 꼬리 방향: 낙하 시작점(-260, 900, -120) 쪽
+  const _up = new T.Vector3(0, 1, 0), _metDir = new T.Vector3(-260, 900, -120).normalize();
   const _q = new T.Quaternion(), _eul = new T.Euler();
   const _v3a = new T.Vector3(), _v3b = new T.Vector3();
 
@@ -765,6 +767,17 @@
         return n;
       });
 
+      // 프리즘 로드: 부스트 링 · 유성(풀) / 마그마 성채: 용암 분출구
+      this.ringNodes = (track.rings || []).map(() => { const n = global.Models.buildProp('boostring'); g.add(n); return n; });
+      this.meteorPool = [];
+      this._trackG = g;
+      this.geyserNodes = (track.geysers || []).map(gy => {
+        const n = global.Models.buildProp('geyser');
+        n.position.set(gy.x, 0, gy.y);
+        g.add(n);
+        return n;
+      });
+
       // 헛간 + 사일로 (Trimble SketchUp 으로 모델링, js/sketchup-props.js)
       (track.barns || []).forEach(bn => {
         const n = global.Models.optimize(global.Models.buildProp('barn'));
@@ -1269,6 +1282,68 @@
             const r = o.r + h * 0.35;
             lf.position.set(Math.cos(a) * r, 6 + h, Math.sin(a) * r);
             lf.rotation.set(a * 1.3, a, a * 0.7);
+          }
+        });
+      }
+      // 부스트 링: 도로 방향을 보고 서서 천천히 돌고, 통과하면 번쩍인다
+      if (this.ringNodes && this.ringNodes.length) {
+        this.track.rings.forEach((r, i) => {
+          const n = this.ringNodes[i];
+          n.position.set(r.x, 0, r.y);
+          n.rotation.y = -Math.atan2(r.ty, r.tx) + Math.PI / 2;   // 고리 면이 진행 방향을 본다
+          n.userData.hoop.rotation.z = r.spin * 0.4;
+          n.userData.hoop.position.y = 40 + Math.sin(r.phase * 2.2) * 3;
+          const f = r.flash;
+          n.userData.glow.opacity = 0.16 + f * 0.5;
+          n.userData.halo.scale.setScalar(1 + f * 0.6 + Math.sin(this.time * 5) * 0.04);
+        });
+      }
+      // 유성: 경고 원이 점점 조여들고, 하늘에서 비스듬히 떨어진다
+      if (this.meteorPool) {
+        const ms = this.track.meteors || [];
+        while (this.meteorPool.length < ms.length) {
+          const n = global.Models.buildProp('meteor');
+          (this._trackG || this.scene).add(n);
+          this.meteorPool.push(n);
+        }
+        this.meteorPool.forEach((n, i) => {
+          const m = ms[i];
+          if (!m || m.state === 'boom') { n.visible = false; return; }
+          n.visible = true;
+          n.position.set(m.x, 0, m.y);
+          const k = Math.max(0, m.t / m.T);            // 1 → 0
+          const rock = n.userData.rock, tail = n.userData.tail;
+          rock.position.set(-k * 260, 14 + k * 900, -k * 120);
+          rock.rotation.set(this.time * 3, this.time * 2, 0);
+          // 꼬리(+y)를 낙하 경로의 반대쪽(출발점 방향)으로 눕힌다
+          tail.position.copy(rock.position);
+          tail.quaternion.setFromUnitVectors(_up, _metDir);
+          const w = n.userData.warn;
+          w.scale.setScalar(0.6 + 0.4 * k + Math.sin(this.time * 18) * 0.03);
+          n.userData.warnM.opacity = 0.35 + 0.45 * (1 - k) * (0.6 + 0.4 * Math.sin(this.time * 20));
+        });
+      }
+      // 용암 분출구: 끓을 때 웅덩이가 밝아지고 불티가 튀고, 분출 때 기둥이 치솟는다
+      if (this.geyserNodes && this.geyserNodes.length) {
+        this.track.geysers.forEach((gy, i) => {
+          const n = this.geyserNodes[i], ud = n.userData;
+          const col = ud.column;
+          if (gy.state === 'erupt') {
+            const p = gy.p;
+            const h = 170 * Math.min(1, p * 4) * (p > 0.8 ? (1 - p) / 0.2 : 1) + 8;
+            col.visible = true;
+            ud.outer.scale.set(1 + Math.sin(this.time * 30) * 0.08, h, 1 + Math.cos(this.time * 27) * 0.08);
+            ud.inner.scale.set(1, h * 0.95, 1);
+            ud.top.position.y = h; ud.top.scale.setScalar(0.8 + Math.sin(this.time * 24) * 0.15);
+            ud.pool.emissiveIntensity = 3.2;
+            if (Math.random() < 0.5) this.spawn(gy.x + (Math.random() - 0.5) * 20, gy.y + (Math.random() - 0.5) * 20, h * 0.8,
+              (Math.random() - 0.5) * 140, (Math.random() - 0.5) * 140, 120 + Math.random() * 160, 0.7,
+              Math.random() < 0.5 ? '#ffb040' : '#ff5a1a', 5, 'dot');
+          } else {
+            col.visible = false;
+            ud.pool.emissiveIntensity = gy.state === 'warn' ? 1.6 + gy.p * 2.2 + Math.sin(this.time * 22) * 0.5 : 1.3;
+            if (gy.state === 'warn' && Math.random() < 0.25) this.spawn(gy.x, gy.y, 6, (Math.random() - 0.5) * 60,
+              (Math.random() - 0.5) * 60, 60 + Math.random() * 60, 0.5, '#ff8a2a', 4, 'dot');
           }
         });
       }

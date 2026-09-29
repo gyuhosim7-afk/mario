@@ -118,6 +118,36 @@
         }
       }
 
+      // 유성 경고 원 · 끓거나 분출 중인 분출구는 옆으로 피한다.
+      // 부스트 링은 실력 높은 CPU 가 노리고 들어간다.
+      const tr2 = world && world.track;
+      if (tr2) {
+        const c = Math.cos(k.angle), s = Math.sin(k.angle);
+        const dodge = (x, y, R, gain) => {
+          const dx = x - k.x, dy = y - k.y;
+          const fwd = c * dx + s * dy;
+          if (fwd < 0 || fwd > 260) return;
+          const side = -s * dx + c * dy;
+          if (Math.abs(side) > R) return;
+          k.input.steer = Math.max(-1, Math.min(1, k.input.steer - Math.sign(side || 1) * (1 - fwd / 260) * gain));
+        };
+        if (this.skill > 0.4) {
+          for (const m of tr2.meteors || []) if (m.state === 'warn' && m.t < 1.2) dodge(m.x, m.y, 70, 1.4);
+          // 분출구는 급코너 안쪽이라 크게 꺾으면 바깥 용암으로 빠진다. 살짝만 비켜 간다
+          for (const g of tr2.geysers || []) if (g.state !== 'idle') dodge(g.x, g.y, 44, 0.55);
+        }
+        if (this.skill > 0.6) {
+          for (const r of tr2.rings || []) {
+            const dx = r.x - k.x, dy = r.y - k.y;
+            const fwd = c * dx + s * dy;
+            if (fwd < 40 || fwd > 320) continue;
+            const side = -s * dx + c * dy;
+            if (Math.abs(side) > 150) continue;
+            k.input.steer = Math.max(-1, Math.min(1, k.input.steer + Math.max(-0.6, Math.min(0.6, side / 90))));
+          }
+        }
+      }
+
       // 아이템 사용
       this._itemT -= dt;
       if (k.item && this._itemT <= 0) {

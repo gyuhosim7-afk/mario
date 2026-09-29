@@ -2238,6 +2238,100 @@
         }
         break;
       }
+      case 'boostring': {
+        // 무지개 부스트 링: 고리 둘레를 따라 색상환을 정점 색으로 칠한다 (프리즘 로드 노면과 같은 색)
+        const tor = geo('bringT', () => {
+          const gg = new T.TorusGeometry(36, 3.6, 10, 48);
+          const pos = gg.attributes.position, col = new Float32Array(pos.count * 3);
+          const c = new T.Color();
+          for (let i = 0; i < pos.count; i++) {
+            const a = Math.atan2(pos.getY(i), pos.getX(i));
+            c.setHSL(((a / (Math.PI * 2)) + 1) % 1, 0.95, 0.62);
+            col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+          }
+          gg.setAttribute('color', new T.BufferAttribute(col, 3));
+          return gg;
+        });
+        const ringM = new T.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
+        const ring = new T.Mesh(tor, ringM);
+        const glowM = new T.MeshBasicMaterial({ color: 0x9ff0ff, transparent: true, opacity: 0.16,
+          depthWrite: false, side: T.DoubleSide, blending: T.AdditiveBlending });
+        const disc = new T.Mesh(geo('bringD', () => new T.CircleGeometry(33, 36)), glowM);
+        const halo = new T.Mesh(geo('bringH', () => new T.RingGeometry(38, 50, 48)),
+          new T.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.18, depthWrite: false,
+            side: T.DoubleSide, blending: T.AdditiveBlending }));
+        const hoop = new T.Group();
+        hoop.add(ring, disc, halo);
+        hoop.position.y = 40;
+        g.add(hoop);
+        // 받침 광선 (도로에 떠 있는 위치를 읽히게)
+        const beam = new T.Mesh(geo('bringB', () => new T.CylinderGeometry(0.8, 5, 4, 8, 1, true)),
+          new T.MeshBasicMaterial({ color: 0x9ff0ff, transparent: true, opacity: 0.35, depthWrite: false, blending: T.AdditiveBlending }));
+        beam.position.y = 2; g.add(beam);
+        g.traverse(o => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
+        g.userData.hoop = hoop; g.userData.glow = glowM; g.userData.halo = halo;
+        break;
+      }
+      case 'meteor': {
+        // 불타는 유성 + 꼬리 + 도로의 경고 원 (경고 원은 따로 움직이도록 userData 로 넘긴다)
+        const rock = new T.Group();
+        rock.add(mesh(geo('metRock', () => new T.IcosahedronGeometry(21, 1)), mat('#4a2a24', { rough: 0.9, flat: true, emissive: '#ff4a10', emissiveIntensity: 0.55 })));
+        const lavaM = emissiveMat('#ff7a2a', '#ff6a1a', 3.2);
+        [[11, 8, 7], [-8, 12, -9], [3, -14, 12], [-12, -5, 8]].forEach(p => {
+          const s = sphere(5.5, lavaM, p[0], p[1], p[2], 8); s.castShadow = false; rock.add(s);
+        });
+        const trailM = new T.MeshBasicMaterial({ color: 0xff8a30, transparent: true, opacity: 0.6,
+          depthWrite: false, blending: T.AdditiveBlending });
+        const trail = new T.Mesh(geo('metTrail', () => new T.ConeGeometry(22, 190, 12, 1, true)), trailM);
+        trail.position.y = 100;                       // 꼬리 그룹의 +y = 떨어지는 방향의 반대
+        const tail = new T.Group();
+        tail.add(trail);
+        const core = new T.Mesh(geo('metCore', () => new T.SphereGeometry(28, 12, 8)),
+          new T.MeshBasicMaterial({ color: 0xff9a40, transparent: true, opacity: 0.35, depthWrite: false, blending: T.AdditiveBlending }));
+        tail.add(core);
+        g.add(rock, tail);
+        g.userData.tail = tail;
+        const warnM = new T.MeshBasicMaterial({ color: 0xff3a3a, transparent: true, opacity: 0.6,
+          depthWrite: false, side: T.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
+        const warn = new T.Group();
+        const w1 = new T.Mesh(geo('metWarn', () => new T.RingGeometry(52, 62, 40)), warnM);
+        const w2 = new T.Mesh(geo('metWarnIn', () => new T.CircleGeometry(52, 40)),
+          new T.MeshBasicMaterial({ color: 0xff3a3a, transparent: true, opacity: 0.16, depthWrite: false,
+            side: T.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+        [w1, w2].forEach(w => { w.rotation.x = -Math.PI / 2; warn.add(w); });
+        warn.position.y = 1.8;
+        g.add(warn);
+        g.traverse(o => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
+        g.userData.rock = rock; g.userData.warn = warn; g.userData.warnM = warnM;
+        break;
+      }
+      case 'geyser': {
+        // 용암 분출구: 도로 가장자리의 바위 테 + 용암 웅덩이 + 불기둥(렌더러가 키운다)
+        const rockM = mat('#2a1c18', { rough: 1, flat: true });
+        for (let i = 0; i < 9; i++) {
+          const a = i / 9 * Math.PI * 2;
+          const r = mesh(geo('geyR', () => new T.DodecahedronGeometry(7, 0)), rockM, Math.cos(a) * 24, 3, Math.sin(a) * 24);
+          r.rotation.set(a, a * 1.7, 0.3); r.scale.set(1.2, 0.8 + (i % 3) * 0.25, 1);
+          g.add(r);
+        }
+        const poolM = emissiveMat('#ff5a10', '#ff6a14', 1.6);
+        const pool = mesh(geo('geyPool', () => new T.CylinderGeometry(20, 22, 3, 18)), poolM, 0, 1.6, 0);
+        pool.castShadow = false; g.add(pool);
+        const colM = new T.MeshBasicMaterial({ color: 0xff8a2a, transparent: true, opacity: 0.85, depthWrite: false, toneMapped: false });
+        const col2M = new T.MeshBasicMaterial({ color: 0xfff0a0, transparent: true, opacity: 0.8, depthWrite: false, toneMapped: false });
+        const column = new T.Group();
+        const outer = new T.Mesh(geo('geyCol', () => { const c = new T.CylinderGeometry(9, 20, 1, 14, 1, true); c.translate(0, 0.5, 0); return c; }), colM);
+        const inner = new T.Mesh(geo('geyCol2', () => { const c = new T.CylinderGeometry(4, 10, 1, 10, 1, true); c.translate(0, 0.5, 0); return c; }), col2M);
+        const top = new T.Mesh(geo('geyTop', () => new T.SphereGeometry(14, 12, 8)), colM);
+        column.add(outer, inner, top);
+        column.visible = false;
+        g.add(column);
+        g.traverse(o => { if (o.isMesh && o !== pool) o.receiveShadow = false; });
+        [outer, inner, top].forEach(o => { o.castShadow = false; });
+        g.userData.column = column; g.userData.outer = outer; g.userData.inner = inner; g.userData.top = top;
+        g.userData.pool = poolM;
+        break;
+      }
       case 'windmill': {
         // 풍차: 흰 탑 + 빨간 지붕 + 네 날개. blades 관절을 렌더러가 돌린다.
         const wall = mat('#f3eee2', { rough: 0.8 });

@@ -124,6 +124,8 @@
 
       this.track.updateThwomps(dt);
       if (this.track.bales.length || this.track.whirls.length) this.track.updateMeadow(dt);
+      if (this.track.rings.length || this.track.meteorZones.length) this.track.updateSpace(dt);
+      if (this.track.geysers.length) this.track.updateMagma(dt);
 
       /* ---- AI ---- */
       if (this.state !== 'COUNTDOWN') {
@@ -187,6 +189,7 @@
       if (!this.timeAttack) this._itemBoxes(dt);
       this._thwompHits();
       this._meadowHits(dt);
+      this._themeHits(dt);
       this._updateHazards(dt);
       this._updateStandings();
 
@@ -412,6 +415,74 @@
               this.renderer.spawn(k.x, k.y, 6, Math.cos(a) * 200, Math.sin(a) * 200, 120 + Math.random() * 220,
                 0.8, i % 3 ? '#9ad86a' : '#e8f6ff', 4, 'dot');
             }
+          }
+        }
+      }
+    }
+
+    /**
+     * 프리즘 로드 · 마그마 성채 기믹 판정.
+     *
+     * 부스트 링: 링 평면을 '앞으로' 지나가는 순간(진행 방향 거리의 부호가 바뀔 때)
+     *   링 반지름 안이면 가속. 카트마다 직전 거리를 기억해 둔다.
+     * 유성: 떨어지는 그 프레임(state 'impact')에만 반경 안 카트를 날린다.
+     * 분출구: 분출 중 기둥에 닿으면 튕겨 나간다. 한 번 맞으면 잠깐 면역.
+     */
+    _themeHits(dt) {
+      const tr = this.track;
+      const R = this.renderer;
+      if (tr.rings.length) {
+        for (const k of this.karts) {
+          if (k.finished) continue;
+          const prev = k._ringAlong || (k._ringAlong = []);
+          tr.rings.forEach((r, ri) => {
+            const dx = k.x - r.x, dy = k.y - r.y;
+            const along = dx * r.tx + dy * r.ty;
+            const side = dx * r.nx + dy * r.ny;
+            const was = prev[ri];
+            prev[ri] = along;
+            if (was === undefined || !(was < 0 && along >= 0)) return;
+            if (Math.abs(side) > r.r || k.z > 70) return;
+            k.giveBoost(1.0, 1.34, 'ring');
+            r.flash = 1;
+            if (k.isPlayer) { this.hud.showToast('부스트 링!', '#9ff0ff'); global.SFX.sfx('boost'); }
+            for (let i = 0; i < 16; i++) {
+              const a = i / 16 * Math.PI * 2;
+              R.spawn(r.x, r.y, 30 + Math.sin(a) * 30, Math.cos(a) * 120 * r.nx, Math.cos(a) * 120 * r.ny, Math.sin(a) * 120,
+                0.6, ['#ff6ad5', '#6ae3ff', '#fff36a', '#8aff9a'][i % 4], 5, 'spark');
+            }
+          });
+        }
+      }
+      for (const m of tr.meteors) {
+        if (m.state !== 'impact') continue;
+        for (const k of this.karts) {
+          if (k.invincible || k.finished || k.z > 80) continue;
+          const d = Math.hypot(k.x - m.x, k.y - m.y);
+          if (d < 70) {
+            this.hitKart(k, 'knock', k.x - m.x || 1, k.y - m.y, 0.95, null);
+            if (k.isPlayer) this.hud.showToast('유성 직격!', '#ffb36b');
+          }
+        }
+        if (this.player && Math.hypot(this.player.x - m.x, this.player.y - m.y) < 520) {
+          R.camera.shake = Math.max(R.camera.shake, 0.55);
+        }
+        for (let i = 0; i < 34; i++) {
+          R.spawn(m.x, m.y, 8, (Math.random() - 0.5) * 380, (Math.random() - 0.5) * 380, Math.random() * 320,
+            0.8 + Math.random() * 0.4, ['#fff2b0', '#ffb040', '#ff5a2a', '#6a5a8a'][i % 4], 6, i % 4 === 3 ? 'smoke' : 'dot');
+        }
+      }
+      for (const k of this.karts) if (k._geyCool > 0) k._geyCool -= dt;
+      for (const g of tr.geysers) {
+        if (g.state !== 'erupt') continue;
+        for (const k of this.karts) {
+          if (k.invincible || k.finished || k._geyCool > 0) continue;
+          if (Math.hypot(k.x - g.x, k.y - g.y) > 38 || k.z > 160) continue;
+          // 튕겨 날리면 코너 바깥 용암으로 떨어지기 쉽다. 제자리 스핀 + 살짝 띄우기로
+          if (this.hitKart(k, 'spin', k.x - g.x || 1, k.y - g.y, 0.6, null)) {
+            k._geyCool = 1.2;
+            k.launch && k.launch(220);
+            if (k.isPlayer) this.hud.showToast('앗 뜨거! 용암 분출', '#ff8a4a');
           }
         }
       }

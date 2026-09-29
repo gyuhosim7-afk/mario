@@ -387,6 +387,10 @@
       this.windmills = [];
       this.barns = [];
       if (this.def.hazard === 'meadow') { this._buildMeadow(); this._placeBarns(); }
+      // 프리즘 로드: 부스트 링 · 유성우 / 마그마 성채: 용암 분출구
+      this.rings = []; this.meteors = []; this.meteorZones = []; this.geysers = [];
+      if (this.theme === 'rainbow') this._buildSpace();
+      if (this.theme === 'bowser') this._buildMagma();
 
       // 스타트 그리드
       this.startSlots = [];
@@ -456,6 +460,115 @@
           }
           if (placed) break;
         }
+      }
+    }
+
+    /** 기믹 자리 고르기: f 근처 ±win 에서 score 가 가장 낮은 노드. 점프대 · 박스 줄 ·
+     *  부스트 발판 · 게이트 · 이미 고른 자리와는 띄운다 */
+    _pickSpot(f, win, score, taken) {
+      const N = this.nodes.length;
+      const busy = this.ramps.map(r => r.i).concat(this.boxSpots, this.boostSpots, this.gantrySpots || [], taken || []);
+      const near = (i, frac) => busy.some(b => { const d = Math.abs(i - b); return Math.min(d, N - d) < N * frac; });
+      const base = Math.round(f * N);
+      let best = base, bs = Infinity;
+      for (let k = -Math.round(N * win); k <= Math.round(N * win); k++) {
+        const i = (base + k + N) % N;
+        if (near(i, 0.025)) continue;
+        const sc = score(i);
+        if (sc < bs) { bs = sc; best = i; }
+      }
+      return best;
+    }
+
+    /**
+     * 프리즘 로드 (우주).
+     *
+     * 부스트 링: 직선 세 곳에 떠서 도로 위를 좌우로 천천히 오간다. 링 가운데를
+     *   앞으로 통과하면 가속. 펜스 없는 코스라 링을 쫓다 가장자리로 밀리는 게
+     *   이 코스다운 위험이 된다.
+     * 유성우: 코스를 따라 정해진 낙하 지점들을 돌아가며 2.6초마다 하나씩 떨어진다.
+     *   떨어지기 1.5초 전부터 도로에 붉은 경고 원이 뜬다. 순서가 고정이라 타임어택
+     *   고스트와도 공정하다.
+     */
+    _buildSpace() {
+      const N = this.nodes.length;
+      const taken = [];
+      for (const f of [0.22, 0.5, 0.8]) {
+        const i = this._pickSpot(f, 0.07, j => this._straightScore[j], taken);
+        taken.push(i);
+        const nd = this.nodes[i];
+        this.rings.push({ i, cx: nd.x, cy: nd.y, nx: nd.nx, ny: nd.ny, tx: nd.dx, ty: nd.dy,
+          x: nd.x, y: nd.y, lat: 0, amp: this.width * 0.26, r: 34, phase: taken.length * 1.7, spin: 0, flash: 0 });
+      }
+      for (let k = 0; k < 12; k++) {
+        const i = Math.round(((k + 0.5) / 12) * N);
+        if (Math.min(i, N - i) < N * 0.06) continue;            // 출발 직선은 비운다
+        this.meteorZones.push(i);
+      }
+      this._meteorT = 1.5; this._meteorN = 0;
+      this.updateSpace(0);
+    }
+
+    updateSpace(dt) {
+      for (const r of this.rings) {
+        r.phase += dt;
+        r.lat = Math.sin(r.phase * 0.9) * r.amp;
+        r.x = r.cx + r.nx * r.lat; r.y = r.cy + r.ny * r.lat;
+        r.spin += dt * 1.6;
+        r.flash = Math.max(0, r.flash - dt * 2.5);
+      }
+      if (!this.meteorZones.length) return;
+      this._meteorT -= dt;
+      if (this._meteorT <= 0) {
+        this._meteorT += 2.6;
+        const n = this._meteorN++;
+        const i = this.meteorZones[(n * 5) % this.meteorZones.length];
+        const nd = this.nodes[i];
+        // 결정적 의사난수: 같은 순서면 같은 자리 (고스트 공정성)
+        const h = Math.sin(n * 91.7 + 3.1) * 43758.5453; const u = h - Math.floor(h);
+        const lat = (u * 2 - 1) * this.width * 0.3;
+        this.meteors.push({ x: nd.x + nd.nx * lat, y: nd.y + nd.ny * lat, t: 1.5, T: 1.5, state: 'warn', boom: 0 });
+      }
+      for (const m of this.meteors) {
+        if (m.state === 'impact') { m.state = 'boom'; m.boom = 0.7; continue; }
+        if (m.state === 'boom') { m.boom -= dt; continue; }
+        m.t -= dt;
+        if (m.t <= 0) m.state = 'impact';                        // 이번 프레임에 게임이 판정한다
+      }
+      this.meteors = this.meteors.filter(m => m.state !== 'boom' || m.boom > 0);
+    }
+
+    /**
+     * 마그마 성채: 용암 분출구.
+     *
+     * 급한 코너 네 곳의 도로 가장자리에 있다. 4.6초 주기로 쉬다가(2.3초) 부글부글
+     * 끓으며 빛나고(1초, 경고) 불기둥이 치솟는다(1.3초). 분출 중에 닿으면 튕겨
+     * 나간다. 코너 안쪽 라인을 파고들수록 가까워서, 빠른 라인과 안전한 라인 사이의
+     * 선택이 생긴다.
+     */
+    _buildMagma() {
+      const taken = [];
+      [0.12, 0.37, 0.62, 0.87].forEach((f, k) => {
+        const i = this._pickSpot(f, 0.08, j => this.nodes[j].radius || 9999, taken);
+        taken.push(i);
+        const nd = this.nodes[i];
+        // 코너 안쪽 가장자리: 다음 노드 방향과 법선의 관계로 안쪽을 고른다
+        const nx2 = this.nodes[(i + 6) % this.nodes.length];
+        const turn = (nd.dx * nx2.dy - nd.dy * nx2.dx) >= 0 ? 1 : -1;
+        const side = turn * ((nd.nx * -nd.dy + nd.ny * nd.dx) >= 0 ? 1 : -1);
+        const off = side * this.width * 0.33;
+        this.geysers.push({ x: nd.x + nd.nx * off, y: nd.y + nd.ny * off, phase: k * 1.15, state: 'idle', p: 0 });
+      });
+      this.updateMagma(0);
+    }
+
+    updateMagma(dt) {
+      const CYC = 4.6;
+      for (const g of this.geysers) {
+        g.phase = (g.phase + dt) % CYC;
+        if (g.phase < 2.3) { g.state = 'idle'; g.p = g.phase / 2.3; }
+        else if (g.phase < 3.3) { g.state = 'warn'; g.p = (g.phase - 2.3) / 1.0; }
+        else { g.state = 'erupt'; g.p = (g.phase - 3.3) / 1.3; }
       }
     }
 
