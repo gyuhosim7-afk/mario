@@ -105,7 +105,8 @@
       if (cache[key]) return cache[key];
       const obj = global.Models.buildKart(combo);
       obj.traverse(o => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
-      const c = this._shoot(obj, size || 128, -0.62, 0.30, 1.12);
+      // 로비 카드가 커져서 카트가 작아 보이지 않게 조금 당겨 찍는다
+      const c = this._shoot(obj, size || 128, -0.62, 0.30, 0.9);
       cache[key] = c;
       return c;
     },

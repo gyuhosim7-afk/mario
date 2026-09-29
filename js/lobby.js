@@ -70,7 +70,21 @@
         if (this.$.trackCards.children.length) this.renderTracks();
         if (this.slots.length) this.renderRoom();
       };
-      this.$.mode.addEventListener('change', () => { global.SFX.sfx('ui'); syncMode(); });
+      this.$.mode.addEventListener('change', () => { global.SFX.sfx('ui'); syncMode(); syncPills(); });
+      // 상단 모드 알약 버튼 (Figma 시안). 실제 값은 숨긴 #raceMode 셀렉트가 갖고,
+      // 버튼은 그 값을 바꾸고 change 이벤트를 쏠 뿐이라 기존 흐름이 그대로 돈다.
+      const pills = document.getElementById('modePills');
+      const syncPills = () => {
+        if (!pills) return;
+        pills.querySelectorAll('.mode-pill').forEach(b => b.classList.toggle('active', b.dataset.mode === this.$.mode.value));
+      };
+      if (pills) pills.addEventListener('click', e => {
+        const b = e.target.closest('.mode-pill');
+        if (!b || b.dataset.mode === this.$.mode.value) return;
+        this.$.mode.value = b.dataset.mode;
+        this.$.mode.dispatchEvent(new Event('change'));
+      });
+      syncPills();
       this.$.lapCount.addEventListener('change', () => this.renderTracks());
       syncMode();
 
@@ -121,6 +135,11 @@
       this.$.classBadge.textContent = c.character.clsName;
       this.$.totalBadge.textContent = 'TOTAL ' + c.total.toFixed(1);
       this.$.flavor.textContent = c.character.flavor;
+      // 프리뷰 위 큰 캐릭터 이름 + 캐릭터 색 (배지 · 이름 광채)
+      const hn = document.getElementById('heroName');
+      if (hn) hn.textContent = c.character.name;
+      const stage = document.getElementById('previewStage');
+      if (stage) stage.style.setProperty('--hero', c.character.colors.body);
       this._syncPreviewModel();
       if (this.slots[0]) {
         this.slots[0].combo = c;
@@ -162,7 +181,7 @@
           this.tab === 'frame' ? item.id : this.sel.frame,
           this.tab === 'wheel' ? item.id : this.sel.wheel,
           this.tab === 'glider' ? item.id : this.sel.glider);
-        queue.push(() => { im.src = global.Icons.kartThumbURL(probe, 132); });
+        queue.push(() => { im.src = global.Icons.kartThumbURL(probe, 176); });
 
         card.addEventListener('mouseenter', () => { this.$.desc.textContent = item.desc || ''; });
         card.addEventListener('click', () => {
@@ -390,6 +409,10 @@
           this.renderTracks();
         });
       });
+      // 카드에서는 설명을 숨기고(로비 높이), 고른 트랙 설명만 카드 아래에 보여 준다
+      const td = document.getElementById('trackDesc');
+      const cur = D.TRACKS.find(t => t.id === this.sel.track);
+      if (td) td.textContent = cur ? cur.desc : '';
     },
 
     /* ---------- 파티 룸 ---------- */

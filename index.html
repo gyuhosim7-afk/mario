@@ -87,6 +87,12 @@
       <h1 class="brand-h1"><svg class="brand" viewBox="-70 -40 1240 420" role="img" aria-label="TURBO TAILS 터보 테일즈"><use href="#brandLogo"/></svg></h1>
       <p>카트 커스텀 · 아이템 확률 · 3트랙 그랑프리</p>
     </div>
+    <!-- 모드 선택 (Figma 시안): 아래 숨긴 #raceMode 셀렉트와 동기화된다 -->
+    <nav class="mode-pills" id="modePills" aria-label="게임 모드">
+      <button class="mode-pill active" data-mode="gp">그랑프리</button>
+      <button class="mode-pill" data-mode="ta">타임어택</button>
+      <button class="mode-pill" data-mode="2p">2인 대전</button>
+    </nav>
     <div class="topbar-right">
       <div class="ping-chip"><span class="dot good"></span> PING <b id="myPing">24</b>ms</div>
       <button id="btnHelp" class="ghost-btn">조작법</button>
@@ -95,44 +101,105 @@
 
   <div class="lobby-grid">
 
-    <!-- ---------- 파츠 커스텀 ---------- -->
-    <div class="panel parts-panel">
-      <div class="panel-head">
-        <h2>파츠 커스텀</h2>
-        <span class="hint">파츠를 바꾸면 스탯이 실시간으로 재계산됩니다</span>
-      </div>
-      <div class="tabs" id="partTabs">
-        <button class="tab active" data-tab="character">캐릭터</button>
-        <button class="tab" data-tab="frame">프레임</button>
-        <button class="tab" data-tab="wheel">바퀴</button>
-        <button class="tab" data-tab="glider">글라이더</button>
-      </div>
-      <div class="part-grid" id="partGrid"></div>
-      <div class="part-desc" id="partDesc"></div>
-    </div>
-
-    <!-- ---------- 프리뷰 + 스탯 ---------- -->
-    <div class="panel preview-panel">
-      <div class="panel-head"><h2>3D 프리뷰</h2><span class="hint" id="comboName">—</span></div>
-      <div class="preview-stage">
-        <canvas id="previewCanvas" width="520" height="300"></canvas>
-        <div class="preview-badges">
-          <span class="badge" id="classBadge">중형급</span>
-          <span class="badge alt" id="totalBadge">TOTAL 0.0</span>
+    <!-- ================= 왼쪽: 3D 프리뷰 (히어로) + 능력치 ================= -->
+    <div class="lobby-left">
+      <div class="panel preview-panel">
+        <div class="preview-stage" id="previewStage">
+          <canvas id="previewCanvas" width="720" height="440"></canvas>
+          <div class="hero-head">
+            <div class="hero-name" id="heroName">—</div>
+            <div class="preview-badges">
+              <span class="badge" id="classBadge">중형급</span>
+              <span class="badge alt" id="totalBadge">TOTAL 0.0</span>
+            </div>
+            <div class="hero-combo" id="comboName">—</div>
+          </div>
+          <button class="ghost-btn spin-btn" id="btnSpin">↻ 회전</button>
+          <button class="ghost-btn export-btn" id="btnExport" title="현재 조합을 GLB로 내보내 블렌더 등에서 편집">⬇ GLB</button>
         </div>
-        <button class="ghost-btn spin-btn" id="btnSpin">↻ 회전</button>
-        <button class="ghost-btn export-btn" id="btnExport" title="현재 조합을 GLB로 내보내 블렌더 등에서 편집">⬇ GLB</button>
       </div>
-      <div class="stats" id="statBars"></div>
-      <div class="flavor" id="charFlavor"></div>
+      <div class="panel stats-panel">
+        <div class="stats" id="statBars"></div>
+        <div class="flavor" id="charFlavor"></div>
+      </div>
     </div>
 
-    <!-- ---------- 아이템 룰렛 시뮬레이터 ---------- -->
-    <div class="panel roulette-panel">
-      <div class="panel-head">
-        <h2>아이템 룰렛 시뮬레이터</h2>
-        <span class="hint">순위별 드롭 가중치 테스트</span>
+    <!-- ================= 오른쪽: 파츠 · 트랙 · 출발 ================= -->
+    <div class="lobby-right">
+      <div class="panel parts-panel">
+        <div class="tabs" id="partTabs">
+          <button class="tab active" data-tab="character">캐릭터</button>
+          <button class="tab" data-tab="frame">프레임</button>
+          <button class="tab" data-tab="wheel">바퀴</button>
+          <button class="tab" data-tab="glider">글라이더</button>
+        </div>
+        <div class="part-grid" id="partGrid"></div>
+        <div class="part-desc" id="partDesc"></div>
       </div>
+
+      <div class="panel track-panel">
+        <div class="panel-head"><h2>트랙</h2><span class="hint">카드를 눌러 선택</span></div>
+        <div class="track-cards" id="trackCards"></div>
+        <div class="part-desc" id="trackDesc"></div>
+      </div>
+
+      <div class="panel go-panel">
+        <div class="room-foot">
+          <select id="raceMode" class="hidden-select" aria-label="모드">
+            <option value="gp" selected>그랑프리 (CPU 7대)</option>
+            <option value="ta">타임어택 (혼자 + 고스트)</option>
+            <option value="2p">2인 분할 화면 (한 키보드)</option>
+          </select>
+          <label class="cpu-diff" id="ghostRow">
+            고스트
+            <select id="ghostUse">
+              <option value="1" selected>내 최고 기록과 주행</option>
+              <option value="0">끄기</option>
+            </select>
+          </label>
+          <label class="cpu-diff">
+            CPU
+            <select id="cpuDiff">
+              <option value="0.45">초보</option>
+              <option value="0.68" selected>보통</option>
+              <option value="0.9">전문가</option>
+            </select>
+          </label>
+          <label class="cpu-diff">
+            랩
+            <select id="lapCount">
+              <option value="1">1랩</option>
+              <option value="3" selected>3랩</option>
+              <option value="5">5랩</option>
+            </select>
+          </label>
+          <label class="cpu-diff">
+            그래픽
+            <select id="gfxQuality">
+              <option value="3" selected>최고</option>
+              <option value="2">높음</option>
+              <option value="1">보통</option>
+              <option value="0">낮음</option>
+              <option value="auto">자동</option>
+            </select>
+          </label>
+        </div>
+        <div class="go-row">
+          <button class="primary-btn ready" id="btnReady">READY</button>
+          <button class="primary-btn go" id="btnStart" disabled>레이스 시작 ▶</button>
+        </div>
+        <div class="room-status" id="roomStatus">대기 중…</div>
+      </div>
+    </div>
+
+    <!-- ================= 아래: 파티 룸 · 아이템 확률 (접이식) ================= -->
+    <details class="panel room-panel">
+      <summary><h2>파티 룸</h2><span class="hint">참가자 · 준비 상태</span></summary>
+      <div class="slots" id="playerSlots"></div>
+    </details>
+
+    <details class="panel roulette-panel">
+      <summary><h2>아이템 룰렛 시뮬레이터</h2><span class="hint">순위별 드롭 가중치</span></summary>
       <div class="rank-row">
         <label>현재 순위</label>
         <input type="range" id="rankSlider" min="1" max="8" value="5">
@@ -144,67 +211,7 @@
       </div>
       <div class="prob-list" id="probList"></div>
       <div class="roll-log" id="rollLog"></div>
-    </div>
-
-    <!-- ---------- 트랙 선택 ---------- -->
-    <div class="panel track-panel">
-      <div class="panel-head"><h2>트랙 선택</h2><span class="hint">투표 카드</span></div>
-      <div class="track-cards" id="trackCards"></div>
-    </div>
-
-    <!-- ---------- 대기실 ---------- -->
-    <div class="panel room-panel">
-      <div class="panel-head">
-        <h2>파티 룸</h2>
-        <span class="hint" id="roomStatus">대기 중…</span>
-      </div>
-      <div class="slots" id="playerSlots"></div>
-      <div class="room-foot">
-        <label class="cpu-diff">
-          모드
-          <select id="raceMode">
-            <option value="gp" selected>그랑프리 (CPU 7대)</option>
-            <option value="ta">타임어택 (혼자 + 고스트)</option>
-            <option value="2p">2인 분할 화면 (한 키보드)</option>
-          </select>
-        </label>
-        <label class="cpu-diff" id="ghostRow">
-          고스트
-          <select id="ghostUse">
-            <option value="1" selected>내 최고 기록과 주행</option>
-            <option value="0">끄기</option>
-          </select>
-        </label>
-        <label class="cpu-diff">
-          CPU 난이도
-          <select id="cpuDiff">
-            <option value="0.45">易 - 초보</option>
-            <option value="0.68" selected>中 - 보통</option>
-            <option value="0.9">難 - 전문가</option>
-          </select>
-        </label>
-        <label class="cpu-diff">
-          그래픽
-          <select id="gfxQuality">
-            <option value="3" selected>최고 (블룸+그림자)</option>
-            <option value="2">높음</option>
-            <option value="1">보통</option>
-            <option value="0">낮음</option>
-            <option value="auto">자동 (프레임에 맞춰 변경)</option>
-          </select>
-        </label>
-        <label class="cpu-diff">
-          랩 수
-          <select id="lapCount">
-            <option value="1">1랩</option>
-            <option value="3" selected>3랩</option>
-            <option value="5">5랩</option>
-          </select>
-        </label>
-        <button class="primary-btn" id="btnReady">READY</button>
-        <button class="primary-btn go" id="btnStart" disabled>GAME START</button>
-      </div>
-    </div>
+    </details>
 
   </div>
 </section>
