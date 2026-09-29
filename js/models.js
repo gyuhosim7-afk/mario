@@ -21,8 +21,11 @@
    * geoCache 키에 접두사가 붙으므로 근경 지오메트리와 섞이지 않는다.
    */
   let LOD = 0;
-  const seg = (n) => (LOD ? Math.max(4, Math.round(n * 0.45)) : n);
-  const gkey = (k) => (LOD ? 'L' + k : k);
+  // 카트 · 캐릭터를 만드는 동안만 분할을 1.5배로 (HQ). 공 · 원통 · 원환이 각져 보이지
+  // 않게 한다. 트랙 장식(나무 · 관중 · 표지판)은 수십 개씩 인스턴싱되므로 그대로 둔다.
+  let HQ = 1;
+  const seg = (n) => (LOD ? Math.max(4, Math.round(n * 0.45)) : Math.round(n * HQ));
+  const gkey = (k) => (LOD ? 'L' + k : (HQ !== 1 ? 'H' + k : k));
   function geo(key, factory) {
     if (!geoCache[key]) geoCache[key] = factory();
     return geoCache[key];
@@ -106,7 +109,7 @@
       s.quadraticCurveTo(-w / 2, h / 2, -w / 2, hh);
       s.lineTo(-w / 2, -hh);
       s.quadraticCurveTo(-w / 2, -h / 2, -hw, -h / 2);
-      const gg = new T.ExtrudeGeometry(s, { depth: d, bevelEnabled: true, bevelSize: r * 0.4, bevelThickness: r * 0.4, bevelSegments: LOD ? 1 : 2, curveSegments: seg(6) });
+      const gg = new T.ExtrudeGeometry(s, { depth: d, bevelEnabled: true, bevelSize: r * 0.4, bevelThickness: r * 0.4, bevelSegments: LOD ? 1 : 3, curveSegments: seg(7) });
       gg.translate(0, 0, -d / 2);
       gg.rotateX(Math.PI / 2);
       return gg;
@@ -334,13 +337,13 @@
       const ankle = joint(0, shinLen, 0, 'ankle');
       shin.add(ankle);
       // 신발: 둥근 몸통 + 앞코
-      const foot = sphere(2.3 * S, shoeMat, 0, 0, 0, 12);
+      const foot = R(sphere(2.3 * S, shoeMat, 0, 0, 0, 12));
       foot.scale.set(1.05, 0.85, 1.9);
       foot.rotation.y = 0;
       foot.position.set(0.9 * S, 0.2 * S, 0);
       foot.rotation.z = 1.35;
       ankle.add(foot);
-      const toe = sphere(1.7 * S, shoeMat, 0, 0, 0, 10);
+      const toe = R(sphere(1.7 * S, shoeMat, 0, 0, 0, 10));
       toe.scale.set(1.0, 0.8, 1.5);
       toe.position.set(1.5 * S, -1.9 * S, 0);
       ankle.add(toe);
@@ -415,7 +418,7 @@
       const fore = bone(foreLen, 1.5 * S, 1.15 * S, body, 'forearm');
       fore.rotation.z = 0.34;                   // 팔꿈치 살짝 굽힘
       elbow.add(fore);
-      const glove = sphere(2.25 * S, ch.id === 'volt' ? mat(c.trim, { metal: 0.6, rough: 0.4 }) : white, 0, foreLen, 0, 12);
+      const glove = R(sphere(2.25 * S, ch.id === 'volt' ? mat(c.trim, { metal: 0.6, rough: 0.4 }) : white, 0, foreLen, 0, 12));
       glove.scale.set(1.0, 0.88, 0.78);        // 주먹 형태로 살짝 눌러줌
       fore.add(glove);
       // 손 끝 기준점은 빈 피벗으로 둔다. 메시는 병합 시 제거되므로 참조가 끊긴다
@@ -948,18 +951,24 @@
     const lodK = LOD ? 2.3 : 1;
     const out = [];
     /** 한 관절 몫을 조각해서 (캐시에서 꺼내) 관절에 붙인다 */
-    function part(name, joint, build, cell, aoDist, headSurf) {
+    /** o.local: 장면을 관절 로컬 좌표로 적었다 (팔뚝처럼 기울어진 뼈)
+     *  o.mat:   이 부품만 다른 재질 (장갑 · 신발) */
+    function part(name, joint, build, cell, aoDist, headSurf, o) {
+      o = o || {};
       const key = 'sc:' + id + ':' + name + (LOD ? ':L' : '');
       const ent = SC.cached(key, () => {
         const sc = build();
         const g = SC.mesh(sc, { cell: cell * lodK, ao: aoDist });
-        const inv = joint.matrixWorld.clone().invert();
-        g.applyMatrix4(inv);
+        let occ = sc.occluders();
+        if (!o.local) {
+          const inv = joint.matrixWorld.clone().invert();
+          g.applyMatrix4(inv);
+          occ = occ.map(q => ({ c: V(q.c).applyMatrix4(inv).toArray(), r: q.r }));
+        }
         g.computeBoundingSphere();
-        const occ = sc.occluders().map(o => ({ c: V(o.c).applyMatrix4(inv).toArray(), r: o.r }));
         return { g, occ };
       });
-      out.push({ joint, g: ent.g, occ: ent.occ, headSurf });
+      out.push({ joint, g: ent.g, occ: ent.occ, headSurf, mat: o.mat });
     }
 
     /* ------------------------ 다리 + 엉덩이 (골반) ------------------------ */
@@ -985,7 +994,7 @@
       // 토끼 꼬리 (시트 뒤로 삐져나온 솜뭉치)
       if (id === 'momo') sc.add(SC.sphere(add3(P, -tR * 1.0, 1.5 * S, 0), 2.6 * S), 0.8 * S, c.belly, 5);
       return rock(sc, 0.9 * S, 0.34 / S);
-    }, 0.46 * S, 2.2 * S);
+    }, 0.4 * S, 2.2 * S);
 
     /* ------------------------ 몸통 ------------------------ */
     part('torso', K.torso, () => {
@@ -1024,7 +1033,7 @@
         sc.add(E(add3(Tj, 0.9 * S, 5.0 * S, 0), [tR * 0.85, 4.6 * S, tR * 0.9]), 1.5 * S, c.body, 3);
       }
       return rock(sc, 1.0 * S, 0.3 / S);
-    }, 0.44 * S, 2.2 * S);
+    }, 0.38 * S, 2.2 * S);
 
     /* ------------------------ 머리 ------------------------ */
     const hard = id === 'volt';                       // 금속 머리는 도형 그대로 (각진 게 맞다)
@@ -1116,7 +1125,7 @@
           }
         }
         return sc;
-      }, 0.046 * u, 0.26 * u, true);
+      }, 0.041 * u, 0.26 * u, true);
     }
 
     /* ------------------------ 흔들림 관절 (꼬리 · 귀) ------------------------ */
@@ -1149,7 +1158,7 @@
             break;
         }
         return sc;
-      }, 0.4 * S, 1.6 * S);
+      }, 0.3 * S, 1.6 * S);
     }
     both(sd => {
       const ear = J[sd < 0 ? 'earL' : 'earR'];
@@ -1171,12 +1180,58 @@
           sc.paint(SC.xform(SC.ellipsoid([0.09 * u, 0.04 * u, 0], [0.09 * u, 0.22 * u, 0.13 * u]), pos, rot), c.belly, 3 / S);
         }
         return sc;
-      }, 0.05 * u, 0.2 * u);
+      }, 0.038 * u, 0.2 * u);
+    });
+
+    /* ------------------------ 장갑 (팔뚝 관절, 로컬 좌표) ------------------------
+     * 팔뚝 뼈는 +y 로 뻗고 손끝이 y = 팔뚝 길이다. 공 하나였던 장갑을 주먹 +
+     * 손가락 마디 넷 + 엄지 + 말린 소맷단으로 조각한다. IK 로 팔이 꺾여도
+     * 관절에 붙어 같이 돈다. */
+    const gloveM = mat('#ffffff', id === 'volt' ? { rough: 0.34, metal: 0.55, envI: 1.15 }
+      : { rough: 0.42, envI: 0.95, sheen: 0.5, sheenRough: 0.45, sheenColor: '#ffffff' });
+    gloveM.vertexColors = true;
+    if (global.Surface) global.Surface.detail(gloveM, { scale: 1.8, rough: 0.22, tint: 0.035 });
+    const gloveC = id === 'volt' ? c.trim : '#f7f7fa', cuffC = id === 'volt' ? c.accent : '#e2e6f0';
+    K.arms.forEach((a, ai) => {
+      const L = a.b, sd = a.side;
+      part('glove' + ai, a.fore, () => {
+        const sc = new SC.Scene();
+        const q = (x, y, z) => [x * S, L + y * S, z * S];
+        sc.add(SC.roundCone(q(0, -2.3, 0), q(0, -1.0, 0), 1.45 * S, 1.7 * S), 0, cuffC, 5);
+        sc.add(SC.ellipsoid(q(0, -2.15, 0), [1.85 * S, 0.5 * S, 1.85 * S]), 0.25 * S, cuffC, 5);
+        sc.add(SC.ellipsoid(q(0.1, 0.35, 0), [1.95 * S, 1.9 * S, 1.7 * S]), 0.7 * S, gloveC, 4);
+        for (let f = 0; f < 4; f++) {
+          sc.add(SC.sphere(q(1.25, 1.35 - f * 0.05, -1.05 + f * 0.7), 0.62 * S), 0.4 * S, gloveC, 4);
+        }
+        sc.add(SC.roundCone(q(0.7, -0.4, sd * 1.35), q(1.55, 0.75, sd * 1.05), 0.62 * S, 0.5 * S), 0.45 * S, gloveC, 4);
+        return sc;
+      }, 0.25 * S, 0.9 * S, false, { local: true, mat: gloveM });
+    });
+
+    /* ------------------------ 신발 (골반 고정 다리) ------------------------
+     * 공 두 개를 겹쳐 놓았던 신발을 운동화로: 캐릭터색 몸통 + 흰 앞코 + 흰 밑창
+     * + 발목 칼라 + 끈. 다리는 착좌 고정이라 골반 좌표(=루트)로 적는다. */
+    const shoeM = mat('#ffffff', { rough: 0.46, envI: 0.9 });
+    shoeM.vertexColors = true;
+    if (global.Surface) global.Surface.detail(shoeM, { scale: 2.2, rough: 0.24, tint: 0.04 });
+    K.legs.forEach((l, li) => {
+      part('shoe' + li, K.pelvis, () => {
+        const sc = new SC.Scene();
+        const An = wp(l.ankle);
+        const q = (x, y, z) => [An[0] + x * S, An[1] + y * S, An[2] + z * S];
+        const sole = '#f4f4f6';
+        sc.add(SC.ellipsoid(q(1.3, -0.55, 0), [2.9 * S, 1.45 * S, 1.75 * S]), 0, c.trim, 4);
+        sc.add(SC.roundCone(q(-0.1, -0.4, 0), q(0.4, 0.9, 0), 1.55 * S, 1.3 * S), 0.6 * S, c.trim, 4);
+        sc.add(SC.sphere(q(3.3, -0.95, 0), 1.35 * S), 0.8 * S, sole, 5);
+        sc.add(SC.roundBox(q(1.45, -1.95, 0), [3.35 * S, 0.45 * S, 1.8 * S], 0.4 * S), 0.3 * S, sole, 6);
+        sc.paint(SC.roundBox(q(1.7, 0.55, 0), [1.15 * S, 0.5 * S, 0.3 * S], 0.2 * S), sole, 3 / S);
+        return sc;
+      }, 0.27 * S, 0.9 * S, false, { mat: shoeM });
     });
 
     /* 여기까지 예외 없이 왔으면 붙인다 (중간에 실패하면 하나도 안 붙는다) */
     for (const p of out) {
-      const m = new T.Mesh(p.g, sm);
+      const m = new T.Mesh(p.g, p.mat || sm);
       m.castShadow = true; m.receiveShadow = true;
       m.userData.occ = p.occ;
       if (p.headSurf) m.userData.headSurf = true;
@@ -1363,6 +1418,11 @@
    * 카트
    * ============================================================= */
   function buildKart(combo) {
+    const prevHQ = HQ;
+    HQ = 1.5;
+    try { return buildKartInner(combo); } finally { HQ = prevHQ; }
+  }
+  function buildKartInner(combo) {
     const g = new T.Group();
     const fr = combo.frame, wh = combo.wheel, gl = combo.glider, ch = combo.character;
     const heavy = ch.cls === 'heavy', light = ch.cls === 'light';
@@ -1485,9 +1545,27 @@
 
     /* 바퀴 */
     const wheels = [];
-    const wheelGeo = geo('wheel' + wr + '_' + ww + '_' + wh.id, () => {
-      const base = new T.CylinderGeometry(wr, wr, ww, 22);
+    const wheelGeo = geo(gkey('wheel2' + wr + '_' + ww + '_' + wh.id), () => {
+      // 타이어 단면을 돌린 회전체: 둥근 어깨 + 트레드 홈 두 줄 + 안쪽으로 말린 사이드월.
+      // 원통이면 모서리가 칼같이 각져서 장난감 바퀴처럼 보였다.
+      const ri = wr * 0.58, h = ww / 2, prof = [];
+      const P = (r, y) => prof.push(new T.Vector2(r, y));
+      P(ri, -h * 0.9); P(wr * 0.8, -h);
+      for (let i = 0; i <= 5; i++) {                 // 아래 어깨 (1/4 원)
+        const t = Math.PI / 2 * i / 5, rr = wr * 0.16;
+        P(wr - rr + Math.sin(t) * rr, -h + rr - Math.cos(t) * rr);
+      }
+      const gro = wr * 0.035;
+      [[-0.2, 0], [-0.17, 1], [-0.11, 1], [-0.08, 0], [0.08, 0], [0.11, 1], [0.17, 1], [0.2, 0]]
+        .forEach(([y, g]) => P(wr - g * gro, y * ww));
+      for (let i = 0; i <= 5; i++) {                 // 위 어깨
+        const t = Math.PI / 2 * i / 5, rr = wr * 0.16;
+        P(wr - rr + Math.cos(t) * rr, h - rr + Math.sin(t) * rr);
+      }
+      P(wr * 0.8, h); P(ri, h * 0.9); P(ri, -h * 0.9);
+      const base = new T.LatheGeometry(prof, seg(30));
       base.rotateX(Math.PI / 2);
+      base.computeVertexNormals();
       if (wh.id !== 'monster' || !T.BufferGeometryUtils) return base;
       // 블록 트레드를 타이어에 구워 넣는다
       const parts = [base.toNonIndexed()];
@@ -1501,9 +1579,14 @@
       parts.forEach(g2 => { if (!g2.attributes.uv) g2.setAttribute('uv', new T.BufferAttribute(new Float32Array(g2.attributes.position.count * 2), 2)); });
       try { return T.BufferGeometryUtils.mergeGeometries(parts, false) || base; } catch (e) { return base; }
     });
-    const rimGeo = geo('rim' + wr + '_' + ww, () => {
-      const gg = new T.CylinderGeometry(wr * 0.55, wr * 0.55, ww * 1.06, 14);
+    const rimGeo = geo(gkey('rim2' + wr + '_' + ww), () => {
+      // 접시형 휠: 가장자리 립이 솟고 가운데로 오목하게 들어간다
+      const pts = [[0.02, 0.5], [0.22, 0.46], [0.46, 0.36], [0.53, 0.5], [0.585, 0.46], [0.59, 0.3],
+                   [0.59, -0.3], [0.585, -0.46], [0.53, -0.5], [0.46, -0.36], [0.22, -0.46], [0.02, -0.5]]
+        .map(([r, y]) => new T.Vector2(r * wr, y * ww * 1.06));
+      const gg = new T.LatheGeometry(pts, seg(28));
       gg.rotateX(Math.PI / 2);
+      gg.computeVertexNormals();
       return gg;
     });
     const hubGeo = geo('hub' + wr, () => {
@@ -1607,12 +1690,13 @@
           // 줄무늬: 포드 바깥 옆면을 따라
           sc.paint(SC.roundBox([-L * 0.02, wr + 3.4, sd * W * 0.54], [L * 0.26, 1.35, 3.2], 1), stripeColor, 1.6);
         });
-        sc.add(SC.ellipsoid([L * 0.43, wr + 2.9, 0], [L * 0.25, 4.4, W * 0.25]), 5, bodyColor, 2);
+        // 노즈: 길고 낮게 뻗어 섀시와 크게 섞는다 (짧고 높으면 앞이 불룩한 혹처럼 보였다)
+        sc.add(SC.ellipsoid([L * 0.38, wr + 2.6, 0], [L * 0.32, 3.7, W * 0.27]), 8, bodyColor, 2);
         sc.add(SC.ellipsoid([-L * 0.3, wr + 4.8, 0], [L * 0.14, 3.2, W * 0.3]), 4, bodyColor, 2);
         // 노즈 윗면 가운데 줄
-        sc.paint(SC.roundBox([L * 0.43, wr + 7.5, 0], [L * 0.2, 3.5, W * 0.045], 1), stripeColor, 1.6);
+        sc.paint(SC.roundBox([L * 0.4, wr + 7.5, 0], [L * 0.24, 4.5, W * 0.075], 1), stripeColor, 2.6);
         // 차체는 큰 곡면뿐이라 격자가 성겨도 (법선이 거리장 기울기라) 매끈하다
-        const geo = SC.mesh(sc, { cell: 1.15 * (LOD ? 2.0 : 1), ao: 3 });
+        const geo = SC.mesh(sc, { cell: (LOD ? 2.2 : 0.95), ao: 3 });
         return { g: geo, occ: sc.occluders() };
       });
     } catch (e) {

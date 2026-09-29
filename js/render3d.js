@@ -946,11 +946,12 @@
        * 경계에서 깜빡이지 않게 한다. */
       // 저사양에서는 내 카트만 고품질로 두고 나머지는 거리와 무관하게 LOD 로 간다.
       // 플레이어가 실제로 들여다보는 건 자기 카트뿐이다.
-      const wantLod = (this.quality <= 1 && !k.isPlayer) || (this.quality < 3
+      const wantLod = (this.quality <= 1 && !k.isPlayer) ||
+        (!k.isPlayer && this._hqSet && !this._hqSet.has(k)) || (this.quality < 3
         ? camD > (node.lodOn ? 300 : 340)
         // 캐릭터가 조각 모델(머리만 2만 삼각형)이 된 뒤로는 원경 전환을 조금 당긴다.
         // 이 거리에서 카트는 화면 폭의 1할 남짓이라 거친 조각과 구분이 안 된다.
-        : camD > (node.lodOn ? 380 : 420));
+        : camD > (node.lodOn ? 340 : 380));
       if (wantLod && !node.lod) {
         try { node.lod = global.Models.buildKartLOD(k.combo); this._applyEnv(node.lod);
               g.add(node.lod); node.lod.visible = false; }
@@ -1202,6 +1203,14 @@
       // 20fps 로 읽힌다 (F3 표시도, 자동 강등 판정도 전부 거짓이 된다).
       if (dt > 0) this._adapt(rawDt > 0 ? rawDt : dt);
       const cam = this.camera;
+
+      // 근경 모델 예산: 사람이 모는 카트 + 카메라에 가장 가까운 CPU 3대만 고품질.
+      // 캐릭터·카트가 조각 모델(대당 약 11만 삼각형)이 된 뒤로 출발 직후처럼 8대가
+      // 뭉쳐 있으면 장면이 300만 삼각형 가까이 된다. 나머지는 거리와 무관하게 원경 모델.
+      const near = world.karts.filter(k => !k.isPlayer && !k.isGhost)
+        .map(k => [k, Math.hypot(k.x - cam.x, k.y - cam.y)])
+        .sort((a, b) => a[1] - b[1]);
+      this._hqSet = new Set(near.slice(0, 3).map(e => e[0]));
 
       // 카트 동기화
       for (const k of world.karts) {
