@@ -2199,6 +2199,45 @@
         g.userData.funnels = funnels;
         break;
       }
+      case 'barn': {
+        // Trimble SketchUp 커넥터로 모델링한 헛간 + 사일로 (js/sketchup-props.js).
+        // SketchUp 은 인치 · Z-up 이다. (x, y, z) → three (x, z, -y) 로 옮기면
+        // 축을 돌리기만 하고 뒤집지 않아서 면의 앞뒤가 유지된다.
+        // 정면(큰 문)은 SketchUp -y → three +z 쪽을 본다. 원점은 헛간 바닥 가운데.
+        const data = global.SketchupProps && global.SketchupProps.barn;
+        if (!data) break;
+        const K = 0.6, CX = 120, CY = 150;
+        const partMats = {};
+        const smoothOf = (n) => /^Silo/.test(n);
+        for (const part of data) {
+          const v = part.v, P = [];
+          for (let i = 0; i < v.length; i += 3) P.push(new T.Vector3((v[i] - CX) * K, v[i + 2] * K, -(v[i + 1] - CY) * K));
+          // 부품 중심: 볼록 부품이라 면이 바깥을 보는지 판정하는 기준이 된다
+          const cen = new T.Vector3();
+          P.forEach(p => cen.add(p)); cen.multiplyScalar(1 / P.length);
+          const idx = [];
+          const e1 = new T.Vector3(), e2 = new T.Vector3(), fn = new T.Vector3(), fc = new T.Vector3();
+          for (const f of part.f) {
+            fc.set(0, 0, 0); f.forEach(i => fc.add(P[i])); fc.multiplyScalar(1 / f.length);
+            e1.subVectors(P[f[1]], P[f[0]]); e2.subVectors(P[f[2]], P[f[0]]);
+            fn.crossVectors(e1, e2);
+            const flip = fn.dot(fc.clone().sub(cen)) < 0;
+            for (let k = 1; k + 1 < f.length; k++) {
+              if (flip) idx.push(f[0], f[k + 1], f[k]); else idx.push(f[0], f[k], f[k + 1]);
+            }
+          }
+          let gg = new T.BufferGeometry().setFromPoints(P);
+          gg.setIndex(idx);
+          // 사일로는 둥글게(정점 법선 공유), 헛간은 판재라 면마다 각지게
+          if (!smoothOf(part.n)) gg = gg.toNonIndexed();
+          gg.computeVertexNormals();
+          const m = partMats[part.c] || (partMats[part.c] = mat(part.c, {
+            rough: part.c === '#4a4f5a' ? 0.7 : (smoothOf(part.n) ? 0.35 : 0.85),
+            metal: smoothOf(part.n) ? 0.45 : 0.02, envI: smoothOf(part.n) ? 1.1 : 0.7 }));
+          g.add(mesh(gg, m));
+        }
+        break;
+      }
       case 'windmill': {
         // 풍차: 흰 탑 + 빨간 지붕 + 네 날개. blades 관절을 렌더러가 돌린다.
         const wall = mat('#f3eee2', { rough: 0.8 });

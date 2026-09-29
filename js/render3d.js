@@ -765,6 +765,16 @@
         return n;
       });
 
+      // 헛간 + 사일로 (Trimble SketchUp 으로 모델링, js/sketchup-props.js)
+      (track.barns || []).forEach(bn => {
+        const n = global.Models.optimize(global.Models.buildProp('barn'));
+        if (!n.children.length) return;
+        n.position.set(bn.x, 0, bn.y);
+        n.rotation.y = bn.face;
+        n.scale.setScalar(1.25);
+        g.add(n);
+      });
+
       /* --- 도로를 가로지르는 게이트 --- */
       (track.gantrySpots || []).forEach((ni, idx) => {
         const nd = track.nodes[ni];

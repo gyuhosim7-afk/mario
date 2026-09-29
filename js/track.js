@@ -385,7 +385,8 @@
       this.bales = [];
       this.whirls = [];
       this.windmills = [];
-      if (this.def.hazard === 'meadow') this._buildMeadow();
+      this.barns = [];
+      if (this.def.hazard === 'meadow') { this._buildMeadow(); this._placeBarns(); }
 
       // 스타트 그리드
       this.startSlots = [];
@@ -454,6 +455,33 @@
             break;
           }
           if (placed) break;
+        }
+      }
+    }
+
+    /** 헛간(SketchUp 모델) 자리: 도로 · 풍차와 충분히 떨어진 풀밭, 문이 코스를 보게 */
+    _placeBarns() {
+      this.barns = [];
+      for (const t0 of [0.42, 0.9, 0.66, 0.15]) {
+        if (this.barns.length >= 2) break;
+        const nd = this.nodeAtT(t0);
+        let done = false;
+        for (const side of [1, -1]) {
+          for (const extra of [420, 560, 720]) {
+            const off = (this.width * 0.5 + extra) * side;
+            const x = nd.x + nd.nx * off, y = nd.y + nd.ny * off;
+            if (x < 300 || y < 300 || x > this.world - 300 || y > this.world - 300) continue;
+            const pr = this.project(x, y);
+            if (pr.dist < this.width * 0.5 + 330) continue;
+            if (this.windmills.some(w => Math.hypot(w.x - x, w.y - y) < 320)) continue;
+            if (this.barns.some(b => Math.hypot(b.x - x, b.y - y) < 900)) continue;
+            // 문(모델 +z)이 가장 가까운 도로 쪽을 보게 돌린다
+            const face = Math.atan2(pr.node.x - x, pr.node.y - y);
+            this.barns.push({ x, y, face });
+            done = true;
+            break;
+          }
+          if (done) break;
         }
       }
     }

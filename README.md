@@ -1,4 +1,4 @@
-# 🏁 SUPER KART GRAND PRIX
+# 🏁 TURBO TAILS · 터보 테일즈
 
 > ## ▶ [지금 바로 플레이](https://gyuhosim7-afk.github.io/mario/)
 >
@@ -167,6 +167,23 @@ layout: [
 
 트랙 표면(도로 / 커브 둔턱 / 갓길 / 부스터)은 3D 리본 메시와 **같은 스플라인·같은 폭**으로
 2048px 노면 판정 맵에 구워지므로, 보이는 그대로 물리 판정이 이뤄집니다.
+
+### 이름 · 로고 (Figma) · 헛간 (SketchUp)
+
+게임 이름은 **TURBO TAILS · 터보 테일즈** 입니다 (꼬리 달린 동물 레이서 + 터보).
+
+- **로고**: Figma 커넥터로 Figma 파일에 직접 그린 시안(노란 입체 글자 + 흰·남색 이중
+  외곽선, 빨간 KART RACING 리본, 체커 깃발, 스피드 라인)을 같은 폰트·색·배치로
+  `index.html` 의 인라인 SVG(`#brandLogo`)로 옮겼습니다. Figma 서버에서 내보낸 파일을
+  받는 길은 이 개발 환경의 네트워크 정책에 막혀서, 폰트는 npm 의 Fontsource 패키지에서
+  받았습니다. Figma 의 바깥쪽(OUTSIDE) 외곽선은 SVG 에서 두 배 굵기 +
+  `paint-order="stroke"` 로 같은 모양이 됩니다. 로비 상단 바와 로딩 화면이 함께 씁니다.
+  Figma 파일에는 로비(캐릭터 선택) 화면 시안도 들어 있습니다.
+- **헛간 + 사일로**: Trimble SketchUp 커넥터로 모델링했습니다 (겜브렐 지붕 · 흰 X 가새
+  문 · 다락 문 · 지붕 환기구 · 금속 띠 사일로, 310면). `.skp` 다운로드도 막혀 있어서
+  SketchUp 세션 안에서 면 데이터를 읽어 결과(JSON)로 돌려받아 `js/sketchup-props.js` 로
+  옮겼습니다. `buildProp('barn')` 이 SketchUp 좌표(인치, Z-up)를 three 좌표로 돌려
+  (x, z, -y) 쓰고, 에메랄드 서킷 풀밭 두 곳에 문이 코스를 보게 세웁니다.
 
 ### 에메랄드 서킷 초원 기믹 (`Track._buildMeadow` / `World._meadowHits`)
 
@@ -652,6 +669,8 @@ js/items.js         순위 기반 가중치 룰렛 + 연출 상태 머신
 js/surface.js       환경맵(IBL) 굽기 + 미세 표면 결 셰이더 주입 + 품질 단계
 js/textures.js      절차적 캔버스 텍스처 + 노멀맵 생성
 js/sculpt.js        SDF 조각 모델러 (smooth union · Surface Nets 메쉬화 · 거리장 AO)
+js/sketchup-props.js  Trimble SketchUp 으로 모델링한 헛간 + 사일로 면 데이터
+assets/fonts/       로고 폰트 (Luckiest Guy · Apache 2.0 / Russo One · SIL OFL, 라이선스 동봉)
 js/models.js        캐릭터/카트/아이템/배경물 3D 모델 + 조각 레시피 + 관절 단위 병합 + AO 굽기
 js/rig.js           착좌 드라이버 리그 (2본 IK · 상체 롤 · 피격 반응)
 js/icons.js         오프스크린 3D 렌더러로 아이콘·썸네일 굽기

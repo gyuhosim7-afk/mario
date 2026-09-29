@@ -1,5 +1,5 @@
 /* =============================================================
- * SUPER KART GRAND PRIX - UI 스타일
+ * TURBO TAILS - UI 스타일
  * ============================================================= */
 :root{
   --bg:#080b16;
@@ -33,11 +33,14 @@ button{font-family:inherit;cursor:pointer}
 
 /* ---------- 상단 바 ---------- */
 .topbar{display:flex;justify-content:space-between;align-items:center;padding:14px 22px;gap:16px}
-.logo{display:flex;align-items:center;gap:14px}
-.logo-mark{font-size:38px;filter:drop-shadow(0 4px 10px rgba(0,0,0,.5))}
-.logo h1{font-size:23px;font-weight:900;letter-spacing:.6px;line-height:1.1}
-.logo h1 em{font-style:normal;color:var(--accent);text-shadow:0 2px 0 #b8791a}
-.logo p{font-size:12px;color:var(--dim);margin-top:3px}
+/* 브랜드 로고 (index.html 의 #brandLogo SVG, Figma 시안과 같은 폰트) */
+@font-face{font-family:"Luckiest Guy";src:url(../assets/fonts/luckiest-guy-latin-400-normal.woff2) format("woff2");font-display:swap}
+@font-face{font-family:"Russo One";src:url(../assets/fonts/russo-one-latin-400-normal.woff2) format("woff2");font-display:swap}
+.logo{display:flex;flex-direction:column;align-items:flex-start;gap:0}
+.brand-h1{margin:0;line-height:0}
+.brand{display:block;width:250px;height:auto;aspect-ratio:1240/420;overflow:visible;filter:drop-shadow(0 6px 14px rgba(0,0,0,.45))}
+.brand-big{width:min(520px,82vw);position:relative;left:50%;transform:translateX(-50%);margin:0 0 14px}
+.logo p{font-size:12px;color:var(--dim);margin-top:8px;padding-left:18px}
 .topbar-right{display:flex;align-items:center;gap:10px}
 .ping-chip{background:var(--panel);border:1px solid var(--panel-line);border-radius:999px;padding:7px 14px;font-size:12px;color:var(--dim)}
 .ping-chip b{color:var(--green);font-size:13px}
@@ -234,7 +237,7 @@ body.touch-mode .touch{display:flex}
 }
 @media (max-width:720px){
   .lobby-grid{grid-template-columns:1fr;grid-template-areas:"preview" "parts" "roulette" "track" "room"}
-  .logo h1{font-size:18px}
+  .brand{width:180px}
   .track-cards{grid-template-columns:1fr}
   .slots{grid-template-columns:1fr}
 }
